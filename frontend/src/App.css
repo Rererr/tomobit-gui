@@ -125,6 +125,18 @@
 .chat-message-text {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.chat-message--system {
+  align-self: center;
+  color: #7a7d8c;
+  font-size: 12px;
+}
+
+/* stderr = 本体の警告・エラー。answerと区別する低彩度の琥珀 */
+.chat-segment--stderr {
+  color: #b08968;
 }
 
 .chat-input-bar {

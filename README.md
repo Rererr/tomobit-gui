@@ -32,5 +32,15 @@ wails dev      # ホットリロード開発
 wails build    # build/bin/tomobit-gui.app を生成
 ```
 
+検証:
+
+```
+go test ./...                        # ユニット
+TOMOBIT_GUI_E2E=1 go test -run TestE2E ./...   # 実Provider検証(実APIを1ターン・台帳は使い捨てDBに隔離)
+```
+
+開発時は本体の env オーバーライドがそのまま子プロセスに効く
+（`TOMOBIT_DB` で使い捨て台帳、`TOMOBIT_CLAUDE_ARGS` でモデル指定など）。
+
 前提: Go 1.26+ / Node / npm / wails v2 CLI（`go install github.com/wailsapp/wails/v2/cmd/wails@latest`）、
 実行時は PATH 上の `tomobit`（本体）。
