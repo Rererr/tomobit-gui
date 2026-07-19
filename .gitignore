@@ -1,3 +1,5 @@
 build/bin
 node_modules
 frontend/dist
+# go build がリポジトリ直下に落とす単体バイナリ(配布物は wails build の build/bin)
+/tomobit-gui
