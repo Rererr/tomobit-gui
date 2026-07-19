@@ -48,6 +48,12 @@ export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
+      // IME変換確定のEnterでは送信しない。WebKit(Wails/macOS)はcompositionendが
+      // keydownより先に発火しisComposingがfalseになるため、keyCode 229も併せて見る
+      // (compositionイベントのフラグ管理では防げない)。
+      if (event.nativeEvent.isComposing || event.keyCode === 229) {
+        return;
+      }
       event.preventDefault();
       submitDraft();
     }
