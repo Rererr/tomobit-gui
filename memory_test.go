@@ -10,8 +10,9 @@ import (
 )
 
 // testSchema reproduces the shape of internal/store/store.go's schema (SCHEMA.md
-// v1.0) — the three tables/view GetMemoryView reads, minimal (no triggers, no
-// surprise_ledger) since this is a read path, not a migration test.
+// v1.0) — the tables/view the GUI's read paths (GetMemoryView / GetTomoStatus /
+// GetSessions) touch, minimal (no triggers) since this is a read path, not a
+// migration test.
 const testSchema = `
 CREATE TABLE experiences (
   id              TEXT    PRIMARY KEY,
@@ -55,6 +56,29 @@ CREATE TABLE curiosity_queue (
   priority    REAL    NOT NULL,
   status      TEXT    NOT NULL DEFAULT 'pending',
   resolved_ts INTEGER
+);
+
+CREATE TABLE surprise_ledger (
+  kind          TEXT    NOT NULL,
+  scope_key     TEXT    NOT NULL,
+  target        TEXT    NOT NULL,
+  experience_id TEXT    NOT NULL,
+  ts            INTEGER NOT NULL,
+  p             REAL    NOT NULL,
+  y             REAL    NOT NULL,
+  s_excess      REAL    NOT NULL,
+  PRIMARY KEY (kind, scope_key, target, experience_id)
+);
+
+CREATE TABLE events (
+  id         INTEGER PRIMARY KEY,
+  session_id TEXT    NOT NULL,
+  seq        INTEGER NOT NULL,
+  ts         INTEGER NOT NULL,
+  v          INTEGER NOT NULL DEFAULT 1,
+  type       TEXT    NOT NULL,
+  payload    TEXT    NOT NULL,
+  UNIQUE (session_id, seq)
 );
 `
 
