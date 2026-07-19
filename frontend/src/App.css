@@ -183,8 +183,197 @@
   cursor: default;
 }
 
-.placeholder-pane {
-  margin: auto;
-  text-align: center;
+.settings-pane,
+.memory-pane {
+  padding: 24px 32px;
+  overflow-y: auto;
+  max-width: 720px;
+}
+
+.settings-pane h2,
+.memory-pane h2 {
+  margin: 0 0 16px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-field-label {
+  font-size: 13px;
   color: #8a8dae;
+}
+
+.settings-textarea {
+  resize: vertical;
+  background-color: #1c1e29;
+  color: #e6e6e6;
+  border: 1px solid #2f3244;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.settings-textarea:focus {
+  outline: none;
+  border-color: #4a6cf7;
+}
+
+/* 注記・空状態の #9698a8: 12px級の説明文が #6b6e7d では 3.6:1 で WCAG AA
+   (4.5:1) を割る実測があった。落ち着きは保ちつつ AA を満たす明度 */
+.settings-note {
+  margin: 8px 0 0;
+  color: #9698a8;
+  font-size: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.settings-save-btn {
+  /* chat-send-btn と同寸: 同じCTA色のボタンはサイズも揃える */
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  background-color: #4a6cf7;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.settings-save-btn:hover:not(:disabled) {
+  background-color: #3c5cd6;
+}
+
+.settings-save-btn:disabled {
+  background-color: #3a3d4d;
+  cursor: default;
+}
+
+.settings-status {
+  font-size: 12px;
+}
+
+.settings-status--saved {
+  color: #7fb88a;
+}
+
+.settings-status--error {
+  color: #b08968;
+}
+
+.settings-retry-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #3a3d4d;
+  background-color: transparent;
+  color: #e6e6e6;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.settings-retry-btn:hover {
+  background-color: #23263a;
+}
+
+.memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.memory-refresh-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #3a3d4d;
+  background-color: transparent;
+  color: #e6e6e6;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.memory-refresh-btn:hover:not(:disabled) {
+  background-color: #23263a;
+}
+
+.memory-refresh-btn:disabled {
+  color: #6b6e7d;
+  cursor: default;
+}
+
+.memory-status {
+  color: #8a8dae;
+  font-size: 13px;
+}
+
+.memory-status--error {
+  color: #b08968;
+}
+
+.memory-empty-ledger {
+  color: #8a8dae;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.memory-section {
+  margin-top: 20px;
+}
+
+.memory-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #c7c9d6;
+}
+
+.memory-section-empty {
+  margin: 0;
+  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  font-size: 13px;
+}
+
+.memory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory-item {
+  background-color: #1c1e29;
+  border: 1px solid #2a2d3a;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.memory-item-title {
+  font-size: 13px;
+  color: #e6e6e6;
+}
+
+.memory-item-kind {
+  /* カード背景 #1c1e29 上で #6b6e7d は 3.3:1 — detail と同色に揃えて AA */
+  color: #8a8dae;
+}
+
+.memory-item-detail {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #8a8dae;
+  overflow-wrap: break-word;
+}
+
+.memory-note {
+  margin-top: 20px;
+  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  font-size: 12px;
 }

@@ -9,7 +9,7 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
 
 ## スコープ
 
-- チャット本体（`tomobit chat` 子プロセスのストリーム表示・New chat = `/new`）
+- チャット本体（`tomobit chat` 子プロセスのストリーム表示・New chat = `/exit` で区切り、次の送信が新プロセス）
 - 好みの喋り方の設定（Provider起動引数 `--append-system-prompt` への注入）
 - 簡易メモリ管理（connections / experiences / curiosity_queue の読み取り専用View）
 

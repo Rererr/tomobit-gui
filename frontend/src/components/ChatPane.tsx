@@ -5,6 +5,10 @@ import type { ChatMessage, StreamSegment, TomoMessage } from "../types";
 interface ChatPaneProps {
   messages: ChatMessage[];
   onSend: (draft: string) => void;
+  // 区切り中は空のままの送信ボタンを許す: 締めのFeedback質問への「Enter=まだ
+  // 言えない」をキーボード以外でも実行できるようにする（入力欄の無効化は
+  // 質問への回答経路を塞ぐので不可）。
+  allowEmptySend: boolean;
 }
 
 // chatの入力待ちマーカー(" ❯ ")の表示除去。pipe出力は端末向けの素テキスト
@@ -27,7 +31,7 @@ function displaySegments(message: TomoMessage): StreamSegment[] {
   return segments.filter((seg) => seg.text !== "");
 }
 
-export function ChatPane({ messages, onSend }: ChatPaneProps) {
+export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -99,8 +103,12 @@ export function ChatPane({ messages, onSend }: ChatPaneProps) {
           placeholder="Tomoにメッセージを送る（Enterで送信 / Shift+Enterで改行）"
           rows={3}
         />
-        <button className="chat-send-btn" onClick={submitDraft} disabled={draft.trim() === ""}>
-          送信
+        <button
+          className="chat-send-btn"
+          onClick={submitDraft}
+          disabled={draft.trim() === "" && !allowEmptySend}
+        >
+          {draft.trim() === "" && allowEmptySend ? "まだ言えない" : "送信"}
         </button>
       </div>
     </div>

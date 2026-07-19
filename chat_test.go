@@ -90,6 +90,43 @@ func TestPumpStream_ルーン分断は結合され全文が欠けず届く(t *te
 	}
 }
 
+func TestEscapeAppendSystemPrompt_バックスラッシュと二重引用符だけをエスケープ(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"素のテキストはダブルクォートで包むだけ", "関西弁で", `"関西弁で"`},
+		{"二重引用符はエスケープ", `言う"こと"`, `"言う\"こと\""`},
+		{"バックスラッシュはエスケープ", `C:\path`, `"C:\\path"`},
+		{"空文字列も引用符だけになる", "", `""`},
+		{"改行はそのまま引用符内に残す", "1行目\n2行目", "\"1行目\n2行目\""},
+	}
+	for _, c := range cases {
+		if got := escapeAppendSystemPrompt(c.in); got != c.want {
+			t.Errorf("%s: escapeAppendSystemPrompt(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+func TestComposeClaudeArgsAppend_既存の値の後ろに追記される(t *testing.T) {
+	cases := []struct {
+		name, existing, style, want string
+	}{
+		{
+			"既存が空なら--append-system-promptだけ",
+			"", "関西弁で",
+			`--append-system-prompt "関西弁で"`,
+		},
+		{
+			"既存があればスペース区切りで後ろに追記",
+			"--exclude-dynamic-system-prompt-sections", "関西弁で",
+			`--exclude-dynamic-system-prompt-sections --append-system-prompt "関西弁で"`,
+		},
+	}
+	for _, c := range cases {
+		if got := composeClaudeArgsAppend(c.existing, c.style); got != c.want {
+			t.Errorf("%s: composeClaudeArgsAppend(%q, %q) = %q, want %q", c.name, c.existing, c.style, got, c.want)
+		}
+	}
+}
+
 func TestFindTomobit_PATHになければgoのbinへフォールバックし両方なければ意味のあるエラー(t *testing.T) {
 	notFound := func(string) (string, error) { return "", errors.New("not found") }
 	if _, err := findTomobit(notFound, func() (string, error) { return t.TempDir(), nil }); err == nil {

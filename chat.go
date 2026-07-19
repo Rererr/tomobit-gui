@@ -77,6 +77,35 @@ func utf8CompletePrefix(b []byte) int {
 	return start
 }
 
+// escapeAppendSystemPrompt double-quotes s for the body's TOMOBIT_CLAUDE_ARGS_APPEND
+// parser (ADR-0001 追記): \ and " become \\ and \" so the value survives as one
+// double-quoted token even when the speaking style holds spaces or quotes.
+func escapeAppendSystemPrompt(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		if r == '\\' || r == '"' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// composeClaudeArgsAppend builds the value for env TOMOBIT_CLAUDE_ARGS_APPEND
+// (ADR-0001 追記): the speaking style becomes a trailing --append-system-prompt,
+// appended after whatever the parent process env already carries so an
+// existing append survives instead of being clobbered.
+func composeClaudeArgsAppend(existing, speakingStyle string) string {
+	arg := "--append-system-prompt " + escapeAppendSystemPrompt(speakingStyle)
+	if existing == "" {
+		return arg
+	}
+	return existing + " " + arg
+}
+
 // findTomobit looks on PATH first, then in ~/go/bin — a Finder-launched .app
 // inherits the loginwindow PATH, which lacks the go install dir the CLI
 // usually lives in.
@@ -98,8 +127,9 @@ func findTomobit(lookPath func(string) (string, error), userHome func() (string,
 // 環境は素通しする（TOMOBIT_DB / TOMOBIT_CLAUDE_ARGS などの本体の env
 // オーバーライドがそのまま効く）。TOMOBIT_FACE=1 は立てない — ADR-0001
 // Decision 5 はそれを予定しているが、現行の本体は env より先に TTY ゲートで
-// 顔窓起動を打ち切るため、pipe 起動では死に配線になる。本体側の改修と併せて
-// 喋り方設定のタスクで入れる。
+// 顔窓起動を打ち切るため（isTTY(os.Stdout) が pipe では常に偽）、pipe 起動では
+// 死に配線になる。本体側が pipe 起動の TTY ゲート（ADR-0025 の pipe=窓なし前提）
+// を設計し直すまで入れない。
 func (a *App) ensureProcLocked() error {
 	if a.proc != nil {
 		return nil
@@ -109,6 +139,16 @@ func (a *App) ensureProcLocked() error {
 		return err
 	}
 	cmd := exec.Command(bin, "chat")
+	// 喋り方 (ADR-0001 Decision 4 追記): 空なら env に一切触れず、既存の
+	// TOMOBIT_CLAUDE_ARGS_APPEND（あれば）をそのまま素通しする。
+	// os.Environ() に同キーが残っていても exec.Cmd が重複キーを後勝ちで
+	// dedupe するので、合成済みの値が子へ届く。既存値が引用符不整合だと合成分が
+	// その中に呑まれるが、それは env を手で壊した場合だけ — 本体側パーサが
+	// 警告する（GUI自身の合成出力は常に整形式）。
+	if style := strings.TrimSpace(a.guiConfig.SpeakingStyle); style != "" {
+		existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
+		cmd.Env = append(os.Environ(), "TOMOBIT_CLAUDE_ARGS_APPEND="+composeClaudeArgsAppend(existing, style))
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)

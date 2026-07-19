@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPane } from "./components/ChatPane";
-import { PlaceholderPane } from "./components/PlaceholderPane";
-import { SendLine } from "../wailsjs/go/main/App";
+import { SettingsPane } from "./components/SettingsPane";
+import { MemoryPane } from "./components/MemoryPane";
+import { EndTask, SendLine } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { ChatMessage, PaneId, StreamChannel } from "./types";
 
@@ -26,16 +27,34 @@ interface ExitInfoData {
 function App() {
   const [activePane, setActivePane] = useState<PaneId>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // New chat が /exit を送ってから完了表示までの「区切り中」。イベント購読は
+  // 一度きり(deps [])なので ref で最新値を読み、UI（空送信ボタンの活性化）は
+  // state で再描画する — 二重管理は setBoundary に閉じ込める。
+  const boundaryRef = useRef(false);
+  const [boundaryActive, setBoundaryActive] = useState(false);
+
+  function setBoundary(v: boolean) {
+    boundaryRef.current = v;
+    setBoundaryActive(v);
+  }
 
   useEffect(() => {
     const offOut = EventsOn("chat:out", (data: OutChunkData) => {
       appendStream(data.channel, data.text);
     });
     const offExit = EventsOn("chat:exit", (data: ExitInfoData) => {
+      // 異常終了は区切り中でも隠さない: /exit の尾部（Feedback → 知覚）が
+      // 失敗したのに「区切った」と言うのはエラーの握り潰しになる。
+      const expected = boundaryRef.current;
+      setBoundary(false);
+      if (data.error !== "") {
+        appendSystem(`チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`);
+        return;
+      }
       appendSystem(
-        data.error === ""
-          ? "チャットのプロセスが終了した — 次の送信で再開する"
-          : `チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`,
+        expected
+          ? "区切った — 次の送信から新しいチャットが始まる"
+          : "チャットのプロセスが終了した — 次の送信で再開する",
       );
     });
     return () => {
@@ -76,12 +95,29 @@ function App() {
     }
   }
 
-  // 「New chat」= /new (ADR-0001 Decision 1)。ログは消さない: 区切りの尾部
+  // 「New chat」= /exit (ADR-0001 追記: 反映境界 = セッション境界 = プロセス
+  // 境界)。走行中のプロセスが無ければ区切る対象も無いので、何も起動せず
+  // チャット面へ切り替えるだけ。ログは消さない: 区切りの尾部
   // (Feedback → 知覚 → Tomo)がこの直後にストリームで届くので、消すと会話の
   // 締めくくりごと見えなくなる。
-  function handleNewChat() {
-    appendSystem("ここまでを区切って次のタスクへ (/new)");
-    void sendLine("/new");
+  async function handleNewChat() {
+    let started: boolean;
+    try {
+      started = await EndTask();
+    } catch (err) {
+      appendSystem(`区切りに失敗: ${err instanceof Error ? err.message : String(err)}`);
+      setActivePane("chat");
+      return;
+    }
+    if (started) {
+      setBoundary(true);
+      // 区切り中も入力は生かす: 直後に届くTomoの締めの質問（Feedback）への答えは
+      // この入力欄から送る。代わりに「新しい話はまだ届かない」ことを言葉で伝える
+      // （pipe にターン終端のフレーミングが無い以上、確実な合図は完了表示だけ）。
+      // この文に完了表示の「区切った」を含めない: 完了を文字列で探す目（人も
+      // スクリプトも）が宣言に誤発火する — E2E 実測で踏んだ罠。
+      appendSystem("ここまでを区切って次のタスクへ (/exit) — 締めの質問にはそのまま答えられる。新しい話は締めが終わってから");
+    }
     setActivePane("chat");
   }
 
@@ -89,6 +125,10 @@ function App() {
     const line = draft.replace(/\r?\n/g, " ");
     if (line.trim() !== "") {
       setMessages((prev) => [...prev, { id: createMessageId(), kind: "user", text: line.trim() }]);
+    } else if (boundaryRef.current) {
+      // 締めの質問への空回答（=まだ言えない）は吹き出しを作らないが、無痕跡だと
+      // 読み返しで「Tomoの自問自答」に見える — 軽い注記だけ残す。
+      appendSystem("（まだ言えない — 空のまま回答）");
     }
     void sendLine(line);
   }
@@ -97,9 +137,17 @@ function App() {
     <div id="app">
       <Sidebar activePane={activePane} onNewChat={handleNewChat} onSelectPane={setActivePane} />
       <main className="main-pane">
-        {activePane === "chat" && <ChatPane messages={messages} onSend={handleSend} />}
-        {activePane === "settings" && <PlaceholderPane title="設定" />}
-        {activePane === "memory" && <PlaceholderPane title="メモリ" />}
+        {/* チャットと設定はアンマウントせず隠すだけ: 入力途中の下書き・未保存の
+            喋り方編集がペイン切替で消えるのを防ぐ（実機レビューで確認された
+            データロス）。メモリは意図的に毎回マウントし直す — 開くたびに台帳の
+            最新を読み直す方が、黙って古いViewを見せるより正しい */}
+        <div style={{ display: activePane === "chat" ? "contents" : "none" }}>
+          <ChatPane messages={messages} onSend={handleSend} allowEmptySend={boundaryActive} />
+        </div>
+        <div style={{ display: activePane === "settings" ? "contents" : "none" }}>
+          <SettingsPane />
+        </div>
+        {activePane === "memory" && <MemoryPane />}
       </main>
     </div>
   );

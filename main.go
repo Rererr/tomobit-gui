@@ -20,6 +20,10 @@ func main() {
 		Title:  "Tomobit",
 		Width:  1100,
 		Height: 760,
+		// 固定260pxサイドバー + チャット面の最小実用幅。これ未満は設定の
+		// textarea が1文字/行まで潰れる（実機レビューで確認された破綻点）。
+		MinWidth:  640,
+		MinHeight: 480,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

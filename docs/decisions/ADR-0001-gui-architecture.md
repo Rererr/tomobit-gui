@@ -29,7 +29,8 @@ tomobit-guiは、端末・顔窓に続く三つ目のレンダラであり、同
 
 - 真実は本体の単一SQLite（`~/.tomobit/tomobit.db`）のまま。GUIは会話DBを持たない
 - 「1セッション = 1タスク = 1 Experience、区切りは人間が宣言する」（ADR-0022）を
-  そのまま使う。GUIの「New chat」= `/new` である
+  そのまま使う。GUIの「New chat」= 区切りの宣言である
+  （実装は `/exit` 経由 — Decision 4 の追記を参照。境界器官の走り方は `/new` と同一）
 - 記帳・知覚・Tomoの質問・鏡・分割プロトコルといった器官はすべて本体のもの。
   GUIはそれらを**再実装せず、透過させる**
 
@@ -84,6 +85,27 @@ GUIバックエンドは `tomobit chat` をパイプ接続の子プロセスと�
   (b) GUIがconfig経由で渡す — のどちらかを決める（クロスリポジトリの小改修候補）
 - GUI自体の設定（喋り方テキスト・表示ノブ）は `~/.tomobit/gui.json`。
   これは配線であって経験ではない（ADR-0021と同じ位置づけ）
+
+### 追記（2026-07-19・実装時判断の充填）
+
+- **注入経路 = 本体に env `TOMOBIT_CLAUDE_ARGS_APPEND` を新設**（クロスリポジトリ小改修）。
+  実装時に判明した事実: env `TOMOBIT_CLAUDE_ARGS` は config `claude_args` を
+  **完全置換**する（env > config は追記ではない）。実機の config には
+  `--exclude-dynamic-system-prompt-sections` が実在し、GUIが既存 env を使うとこれが落ちる。
+  - 却下 (a) 既存 env の引用符対応だけ → 置換問題が残る
+  - 却下 (b) config `claude_args` への書き込み → `claude_args` は `do` の Executor 起動を
+    含む全 claude 起動に効き、喋り方が端末セッションとタスク実行へ漏れる
+  - 採用: env>config で解決した引数列の**後ろに追記**される新 env。パースは引用符対応
+    （`TOMOBIT_CLAUDE_ARGS` も同じパーサに揃える — 引用符なし入力の挙動は従来と同一）。
+    GUIは chat 子プロセスの env にだけ `--append-system-prompt <喋り方>` を載せるので、
+    効くのはGUI発のセッションのみ・既存引数はそのまま・台帳も汚れない
+- **反映境界 = セッション境界 = プロセス境界**。env はプロセス起動時に固定されるため、
+  GUIの「New chat」は `/new` でなく **`/exit` を送り、次の送信が新プロセスを起動する**
+  （既存の自動再起動に乗る）。pipe では起動時挨拶が無く（isTTY ゲート）、境界器官は
+  `/new` と同じ `closeTask` で走るので、意味は「区切りの宣言」のまま変わらない。
+  受け入れる摩擦: `/exit` 後〜プロセス終了までの間に送った行は読まれずに落ちる
+  （端末で `/exit` 直後に打った文字と同じ運命）。終了後の送信は既存の
+  EPIPE 再起動・再送が拾う
 
 ## Decision 5: 姿は顔窓のまま。GUIは姿を再実装しない
 
