@@ -1,5 +1,29 @@
 export namespace main {
 	
+	export class AmendRequest {
+	    id: string;
+	    set_context: boolean;
+	    context: string;
+	    set_outcome: boolean;
+	    outcome: string;
+	    set_provider: boolean;
+	    provider: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AmendRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.set_context = source["set_context"];
+	        this.context = source["context"];
+	        this.set_outcome = source["set_outcome"];
+	        this.outcome = source["outcome"];
+	        this.set_provider = source["set_provider"];
+	        this.provider = source["provider"];
+	    }
+	}
 	export class Connection {
 	    kind: string;
 	    scope_key: string;
@@ -244,6 +268,20 @@ export namespace main {
 	        this.exists = source["exists"];
 	        this.stage = source["stage"];
 	        this.stage_name = source["stage_name"];
+	    }
+	}
+	export class WriteResult {
+	    summary: string;
+	    notice: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WriteResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summary = source["summary"];
+	        this.notice = source["notice"];
 	    }
 	}
 

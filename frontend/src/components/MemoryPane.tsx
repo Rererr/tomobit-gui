@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
-import { GetMemoryView } from "../../wailsjs/go/main/App";
-import type { main } from "../../wailsjs/go/models";
+import { AmendExperience, ForgetExperiences, GetMemoryView } from "../../wailsjs/go/main/App";
+import { main } from "../../wailsjs/go/models";
 
 type LoadState =
   | { kind: "loading" }
   | { kind: "loaded"; view: main.MemoryView }
   | { kind: "error"; message: string };
+
+/** 経験1行に対する進行中の操作。開けるのは同時に1行だけ — 訂正も忘却も
+ * 台帳の外科手術（本体ADR-0033）で、並べて積む類の操作ではない */
+type RowAction =
+  | { kind: "confirm-forget"; id: string }
+  | { kind: "editing"; id: string; context: string; outcome: string; provider: string }
+  | { kind: "busy"; id: string };
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString();
@@ -97,6 +108,8 @@ function scopeLabel(scopeKey: string): string {
 
 export function MemoryPane() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [action, setAction] = useState<RowAction | null>(null);
+  const [writeStatus, setWriteStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function load() {
     setState({ kind: "loading" });
@@ -104,13 +117,51 @@ export function MemoryPane() {
       const view = await GetMemoryView();
       setState({ kind: "loaded", view });
     } catch (err) {
-      setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      setState({ kind: "error", message: errText(err) });
     }
   }
 
   useEffect(() => {
     void load();
   }, []);
+
+  /** 書き込み1回の共通後始末: 成功はサマリ表示 + 再読込（rebuild後の台帳を
+   * 見せる）、失敗は本体CLIの検証文言をそのまま見せる — GUIは言い換えない */
+  async function runWrite(op: () => Promise<main.WriteResult>) {
+    try {
+      const res = await op();
+      setWriteStatus({ ok: true, text: res.notice !== "" ? `${res.summary}（${res.notice}）` : res.summary });
+      setAction(null);
+      await load();
+    } catch (err) {
+      setWriteStatus({ ok: false, text: errText(err) });
+      setAction(null);
+    }
+  }
+
+  async function forgetOne(id: string) {
+    setAction({ kind: "busy", id });
+    await runWrite(() => ForgetExperiences([id]));
+  }
+
+  async function saveAmend(e: main.Experience, d: { context: string; outcome: string; provider: string }) {
+    const req = new main.AmendRequest({
+      id: e.id,
+      set_context: d.context !== e.context,
+      context: d.context,
+      set_outcome: d.outcome !== e.outcome,
+      outcome: d.outcome,
+      set_provider: d.provider !== e.provider,
+      provider: d.provider,
+    });
+    if (!req.set_context && !req.set_outcome && !req.set_provider) {
+      setWriteStatus({ ok: true, text: "変更なし — 何も送っていない" });
+      setAction(null);
+      return;
+    }
+    setAction({ kind: "busy", id: e.id });
+    await runWrite(() => AmendExperience(req));
+  }
 
   return (
     <div className="memory-pane">
@@ -124,6 +175,11 @@ export function MemoryPane() {
       {state.kind === "loading" && <p className="memory-status">読み込み中…</p>}
       {state.kind === "error" && (
         <p className="memory-status memory-status--error">読み込みに失敗: {state.message}</p>
+      )}
+      {writeStatus !== null && (
+        <p className={writeStatus.ok ? "memory-status" : "memory-status memory-status--error"}>
+          {writeStatus.text}
+        </p>
       )}
 
       {state.kind === "loaded" && !state.view.exists && (
@@ -180,16 +236,110 @@ export function MemoryPane() {
               <p className="memory-section-empty">まだ経験が無い</p>
             ) : (
               <ul className="memory-list">
-                {state.view.experiences.map((e) => (
-                  <li key={e.id} className="memory-item">
-                    <div className="memory-item-title">
-                      {formatDate(e.ts)} ・{e.kind}
-                      {e.provider !== "" ? ` ・${e.provider}` : ""}
-                    </div>
-                    <div className="memory-item-detail">{formatKV(e.context)}</div>
-                    <div className="memory-item-detail">{summarizeOutcome(e.outcome)}</div>
-                  </li>
-                ))}
+                {state.view.experiences.map((e) => {
+                  const rowAction = action !== null && action.id === e.id ? action : null;
+                  return (
+                    <li key={e.id} className="memory-item">
+                      <div className="memory-item-title">
+                        {formatDate(e.ts)} ・{e.kind}
+                        {e.provider !== "" ? ` ・${e.provider}` : ""}
+                      </div>
+                      <div className="memory-item-detail">{formatKV(e.context)}</div>
+                      <div className="memory-item-detail">{summarizeOutcome(e.outcome)}</div>
+
+                      {rowAction === null && (
+                        <div className="memory-item-actions">
+                          <button
+                            className="memory-act-btn"
+                            disabled={action !== null}
+                            onClick={() =>
+                              setAction({
+                                kind: "editing",
+                                id: e.id,
+                                context: e.context,
+                                outcome: e.outcome,
+                                provider: e.provider,
+                              })
+                            }
+                          >
+                            訂正
+                          </button>
+                          <button
+                            className="memory-act-btn"
+                            disabled={action !== null}
+                            onClick={() => setAction({ kind: "confirm-forget", id: e.id })}
+                          >
+                            忘れる
+                          </button>
+                        </div>
+                      )}
+
+                      {rowAction?.kind === "confirm-forget" && (
+                        <div className="memory-item-actions">
+                          <span className="memory-confirm-text">物理削除する — 取り消せない</span>
+                          <button
+                            className="memory-act-btn memory-act-btn--danger"
+                            onClick={() => void forgetOne(e.id)}
+                          >
+                            忘れる
+                          </button>
+                          <button className="memory-act-btn" onClick={() => setAction(null)}>
+                            やめる
+                          </button>
+                        </div>
+                      )}
+
+                      {rowAction?.kind === "editing" && (
+                        <div className="memory-edit-form">
+                          <label className="memory-edit-label">
+                            context（JSONオブジェクト・全置換）
+                            <textarea
+                              className="memory-edit-input"
+                              rows={2}
+                              value={rowAction.context}
+                              onChange={(ev) => setAction({ ...rowAction, context: ev.target.value })}
+                            />
+                          </label>
+                          <label className="memory-edit-label">
+                            outcome（JSON・全置換）
+                            <textarea
+                              className="memory-edit-input"
+                              rows={2}
+                              value={rowAction.outcome}
+                              onChange={(ev) => setAction({ ...rowAction, outcome: ev.target.value })}
+                            />
+                          </label>
+                          {e.kind === "execution" && (
+                            <label className="memory-edit-label">
+                              provider
+                              <input
+                                className="memory-edit-input"
+                                value={rowAction.provider}
+                                onChange={(ev) => setAction({ ...rowAction, provider: ev.target.value })}
+                              />
+                            </label>
+                          )}
+                          <p className="memory-edit-note">
+                            訂正は削除ではなく追記（人間による再知覚）。検証は本体が行い、
+                            不正なJSON・未知のkey/providerは拒否される
+                          </p>
+                          <div className="memory-item-actions">
+                            <button className="memory-act-btn" onClick={() => void saveAmend(e, rowAction)}>
+                              訂正を保存
+                            </button>
+                            <button className="memory-act-btn" onClick={() => setAction(null)}>
+                              やめる
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {rowAction?.kind === "busy" && (
+                        <p className="memory-status">実行中…（rebuildが終わるまで待つ）</p>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -213,7 +363,9 @@ export function MemoryPane() {
           </section>
 
           <p className="memory-note">
-            台帳の読み取り専用View — 記憶は会話から積まれる（編集・削除の器官はまだ無い）
+            読みは台帳の読み取り専用View。訂正・忘却は本体の忘却の器官（tomobit amend /
+            forget）を経由する。セッション単位の完全忘却（生ログごと消す）はCLIの
+            `tomobit forget --session` で
           </p>
         </>
       )}

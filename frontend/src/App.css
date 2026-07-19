@@ -425,6 +425,76 @@
   font-size: 12px;
 }
 
+.memory-item-actions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-act-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #3a3d4d;
+  background-color: transparent;
+  color: #c7c9d6;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memory-act-btn:hover:not(:disabled) {
+  background-color: #23263a;
+}
+
+.memory-act-btn:disabled {
+  color: #6b6e7d;
+  cursor: default;
+}
+
+.memory-act-btn--danger {
+  border-color: #b08968;
+  color: #b08968;
+}
+
+.memory-confirm-text {
+  font-size: 12px;
+  color: #b08968;
+}
+
+.memory-edit-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memory-edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #8a8dae;
+}
+
+.memory-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #3a3d4d;
+  background-color: #12141c;
+  color: #e6e6e6;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.memory-edit-note {
+  margin: 0;
+  font-size: 12px;
+  color: #9698a8;
+}
+
 .memory-group {
   margin-bottom: 8px;
 }
