@@ -34,11 +34,48 @@
   flex: 1;
   margin-top: 16px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .session-list-placeholder {
   color: #7a7d8c;
   font-size: 13px;
+}
+
+.session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #c7c9d6;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-item:hover {
+  background-color: #23263a;
+}
+
+.session-item.active {
+  background-color: #2a2d44;
+  color: #ffffff;
+}
+
+.session-item-intent {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item-meta {
+  font-size: 11px;
+  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
 }
 
 .sidebar-footer {
@@ -75,6 +112,16 @@
   flex-direction: column;
   min-width: 0;
   background-color: #14161d;
+}
+
+/* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView */
+.main-header {
+  flex-shrink: 0;
+  padding: 10px 24px;
+  border-bottom: 1px solid #23263a;
+  color: #c7c9d6;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .chat-pane {
@@ -376,4 +423,93 @@
   margin-top: 20px;
   color: #9698a8; /* settings-note と同じ AA 対応の明度 */
   font-size: 12px;
+}
+
+.memory-group {
+  margin-bottom: 8px;
+}
+
+.memory-group-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: #1c1e29;
+  border: 1px solid #2a2d3a;
+  cursor: pointer;
+}
+
+/* display:flex は details の既定マーカーを消すので、開閉の目印を明示する */
+.memory-group-summary::before {
+  content: "▸";
+  color: #8a8dae;
+  font-size: 11px;
+}
+
+.memory-group[open] > .memory-group-summary::before {
+  content: "▾";
+}
+
+.memory-group-summary:hover {
+  background-color: #23263a;
+}
+
+.memory-group-stats {
+  font-size: 12px;
+  color: #8a8dae;
+}
+
+.memory-group > .memory-list {
+  margin: 6px 0 0 14px;
+}
+
+/* 過去セッションのダイジェスト表示 */
+.session-pane {
+  padding: 24px 32px;
+  overflow-y: auto;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-pane-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.session-pane-header h2 {
+  margin: 0;
+}
+
+.session-pane-status {
+  font-size: 12px;
+  color: #8a8dae;
+}
+
+.session-pane-note {
+  margin: 8px 0 16px;
+  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  font-size: 12px;
+}
+
+.session-digest-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.session-digest-tool {
+  align-self: flex-start;
+  font-size: 12px;
+  color: #8a8dae;
+  padding-left: 14px;
+}
+
+.session-digest-error {
+  align-self: flex-start;
+  font-size: 12px;
+  color: #b08968; /* stderr と同じ低彩度の琥珀 */
+  padding-left: 14px;
 }

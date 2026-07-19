@@ -1,4 +1,4 @@
-export type PaneId = "chat" | "settings" | "memory";
+export type PaneId = "chat" | "settings" | "memory" | "session";
 
 export type StreamChannel = "stdout" | "stderr";
 

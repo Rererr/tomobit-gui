@@ -59,6 +59,42 @@ function connectionStrength(c: main.Connection): { percent: number; n: number } 
   return { percent, n };
 }
 
+/** target(Provider・好みペア)単位の集約 — 複数Provider運用では同じ文脈が
+ * Providerの数だけ行を生むので、行の主はtargetにする。バックエンドは
+ * last_update降順で返すため、グループ順・グループ内順もそのまま新しい順 */
+interface ConnGroup {
+  kind: string;
+  target: string;
+  conns: main.Connection[];
+}
+
+function groupConnections(conns: main.Connection[]): ConnGroup[] {
+  const groups = new Map<string, ConnGroup>();
+  for (const c of conns) {
+    const key = `${c.kind}:${c.target}`;
+    let g = groups.get(key);
+    if (g === undefined) {
+      g = { kind: c.kind, target: c.target, conns: [] };
+      groups.set(key, g);
+    }
+    g.conns.push(c);
+  }
+  return [...groups.values()];
+}
+
+function groupSummary(g: ConnGroup): string {
+  const percents = g.conns.map((c) => connectionStrength(c).percent);
+  const min = Math.min(...percents);
+  const max = Math.max(...percents);
+  const range = min === max ? `${min}%` : `${min}〜${max}%`;
+  return `文脈 ${g.conns.length}件 ・強さ ${range}`;
+}
+
+/** 空スコープ("")は全文脈に効く既定 — 空文字のまま出すと欠けに見える */
+function scopeLabel(scopeKey: string): string {
+  return scopeKey === "" ? "(すべての文脈)" : scopeKey;
+}
+
 export function MemoryPane() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -103,24 +139,38 @@ export function MemoryPane() {
             {state.view.connections.length === 0 ? (
               <p className="memory-section-empty">まだ何も学んでいない</p>
             ) : (
-              <ul className="memory-list">
-                {state.view.connections.map((c) => {
-                  const { percent, n } = connectionStrength(c);
-                  return (
-                    <li key={`${c.kind}:${c.scope_key}:${c.target}`} className="memory-item">
-                      <div className="memory-item-title">
-                        {c.scope_key} → {c.target} <span className="memory-item-kind">({c.kind})</span>
-                      </div>
-                      <div
-                        className="memory-item-detail"
-                        title="強さ = 成功率の推定（α/(α+β)）／経験量 = 事前分を除いた観測の蓄積（α+β−事前）。時間で減衰する"
-                      >
-                        強さ {percent}% ・経験量 {n.toFixed(1)} ・更新 {formatDate(c.last_update)}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              (() => {
+                const groups = groupConnections(state.view.connections);
+                // グループが少ないうちは畳む理由が無い。増えたら summary の
+                // 集約値だけで見通し、必要な target を開く
+                const open = groups.length <= 2;
+                return groups.map((g) => (
+                  <details key={`${g.kind}:${g.target}`} className="memory-group" open={open}>
+                    <summary className="memory-group-summary">
+                      <span className="memory-item-title">
+                        {g.target} <span className="memory-item-kind">({g.kind})</span>
+                      </span>
+                      <span className="memory-group-stats">{groupSummary(g)}</span>
+                    </summary>
+                    <ul className="memory-list">
+                      {g.conns.map((c) => {
+                        const { percent, n } = connectionStrength(c);
+                        return (
+                          <li key={`${c.scope_key}`} className="memory-item">
+                            <div className="memory-item-title">{scopeLabel(c.scope_key)}</div>
+                            <div
+                              className="memory-item-detail"
+                              title="強さ = 成功率の推定（α/(α+β)）／経験量 = 事前分を除いた観測の蓄積（α+β−事前）。時間で減衰する"
+                            >
+                              強さ {percent}% ・経験量 {n.toFixed(1)} ・更新 {formatDate(c.last_update)}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                ));
+              })()
             )}
           </section>
 

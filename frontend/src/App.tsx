@@ -4,8 +4,10 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatPane } from "./components/ChatPane";
 import { SettingsPane } from "./components/SettingsPane";
 import { MemoryPane } from "./components/MemoryPane";
-import { EndTask, SendLine } from "../wailsjs/go/main/App";
+import { SessionPane } from "./components/SessionPane";
+import { EndTask, GetSessions, GetTomoStatus, SendLine } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
+import type { main } from "../wailsjs/go/models";
 import type { ChatMessage, PaneId, StreamChannel } from "./types";
 
 let nextMessageId = 0;
@@ -27,6 +29,10 @@ interface ExitInfoData {
 function App() {
   const [activePane, setActivePane] = useState<PaneId>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
+  const [sessions, setSessions] = useState<main.SessionDigest[]>([]);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   // New chat が /exit を送ってから完了表示までの「区切り中」。イベント購読は
   // 一度きり(deps [])なので ref で最新値を読み、UI（空送信ボタンの活性化）は
   // state で再描画する — 二重管理は setBoundary に閉じ込める。
@@ -38,7 +44,23 @@ function App() {
     setBoundaryActive(v);
   }
 
+  // ヘッダのステージとセッション一覧は台帳のView。読み直すのは起動時と
+  // プロセス終了時（= セッション境界 — 記帳・知覚が走りステージも一覧も
+  // 動きうる瞬間）だけ: ポーリングはしない（低負荷、ADR-0001 Decision 3 と
+  // 同じ「開くたびに読む」姿勢）。
+  async function refreshLedgerViews() {
+    try {
+      const [status, list] = await Promise.all([GetTomoStatus(), GetSessions()]);
+      setTomoStatus(status);
+      setSessions(list.sessions);
+      setSessionsError(null);
+    } catch (err) {
+      setSessionsError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   useEffect(() => {
+    void refreshLedgerViews();
     const offOut = EventsOn("chat:out", (data: OutChunkData) => {
       appendStream(data.channel, data.text);
     });
@@ -47,6 +69,7 @@ function App() {
       // 失敗したのに「区切った」と言うのはエラーの握り潰しになる。
       const expected = boundaryRef.current;
       setBoundary(false);
+      void refreshLedgerViews();
       if (data.error !== "") {
         appendSystem(`チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`);
         return;
@@ -133,14 +156,32 @@ function App() {
     void sendLine(line);
   }
 
+  function handleSelectSession(sessionID: string) {
+    setSelectedSession(sessionID);
+    setActivePane("session");
+  }
+
   return (
     <div id="app">
-      <Sidebar activePane={activePane} onNewChat={handleNewChat} onSelectPane={setActivePane} />
+      <Sidebar
+        activePane={activePane}
+        sessions={sessions}
+        sessionsError={sessionsError}
+        selectedSession={selectedSession}
+        onNewChat={handleNewChat}
+        onSelectPane={setActivePane}
+        onSelectSession={handleSelectSession}
+      />
       <main className="main-pane">
+        {/* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView。
+            台帳がまだ無ければステージは名乗らない */}
+        <header className="main-header" title="成長ステージ — 台帳からの導出View（顔窓と同じ式）">
+          {tomoStatus !== null && tomoStatus.exists ? `Tomo · ${tomoStatus.stage_name}` : "Tomo"}
+        </header>
         {/* チャットと設定はアンマウントせず隠すだけ: 入力途中の下書き・未保存の
             喋り方編集がペイン切替で消えるのを防ぐ（実機レビューで確認された
-            データロス）。メモリは意図的に毎回マウントし直す — 開くたびに台帳の
-            最新を読み直す方が、黙って古いViewを見せるより正しい */}
+            データロス）。メモリと過去セッションは意図的に毎回マウントし直す —
+            開くたびに台帳の最新を読み直す方が、黙って古いViewを見せるより正しい */}
         <div style={{ display: activePane === "chat" ? "contents" : "none" }}>
           <ChatPane messages={messages} onSend={handleSend} allowEmptySend={boundaryActive} />
         </div>
@@ -148,6 +189,9 @@ function App() {
           <SettingsPane />
         </div>
         {activePane === "memory" && <MemoryPane />}
+        {activePane === "session" && selectedSession !== null && (
+          <SessionPane sessionId={selectedSession} />
+        )}
       </main>
     </div>
   );

@@ -8,6 +8,12 @@ export function GetGUIConfig():Promise<main.GUIConfig>;
 
 export function GetMemoryView():Promise<main.MemoryView>;
 
+export function GetSessionDigest(arg1:string):Promise<main.SessionDetail>;
+
+export function GetSessions():Promise<main.SessionList>;
+
+export function GetTomoStatus():Promise<main.TomoStatus>;
+
 export function SaveGUIConfig(arg1:main.GUIConfig):Promise<void>;
 
 export function SendLine(arg1:string):Promise<void>;

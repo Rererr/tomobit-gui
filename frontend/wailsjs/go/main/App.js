@@ -14,6 +14,18 @@ export function GetMemoryView() {
   return window['go']['main']['App']['GetMemoryView']();
 }
 
+export function GetSessionDigest(arg1) {
+  return window['go']['main']['App']['GetSessionDigest'](arg1);
+}
+
+export function GetSessions() {
+  return window['go']['main']['App']['GetSessions']();
+}
+
+export function GetTomoStatus() {
+  return window['go']['main']['App']['GetTomoStatus']();
+}
+
 export function SaveGUIConfig(arg1) {
   return window['go']['main']['App']['SaveGUIConfig'](arg1);
 }
