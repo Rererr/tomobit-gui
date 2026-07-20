@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { ChatMessage, StreamSegment, TomoMessage } from "../types";
+import type { ChatMessage, TurnBlock, TurnMessage } from "../types";
 
 interface ChatPaneProps {
   messages: ChatMessage[];
@@ -11,24 +11,55 @@ interface ChatPaneProps {
   allowEmptySend: boolean;
 }
 
-// chatの入力待ちマーカー(" ❯ ")の表示除去。pipe出力は端末向けの素テキスト
-// (ADR-0001の受け入れた摩擦)で、マーカーは入力待ちのたびに流れてくる。
-// 構造は読まない — 行頭の見た目の掃除だけ。
-function stripPromptMarker(text: string): string {
-  return text.replace(/^ ❯ /gm, "");
+function formatDuration(durationMs: number): string {
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-// 表示用に整えたセグメント列: マーカーを掃除し、吹き出しの先頭・末尾の
-// 余白改行を落とす（中身の空行はそのまま）。
-function displaySegments(message: TomoMessage): StreamSegment[] {
-  const segments = message.segments.map((seg) => ({ ...seg, text: stripPromptMarker(seg.text) }));
-  if (segments.length > 0) {
-    const first = segments[0];
-    segments[0] = { ...first, text: first.text.replace(/^\n+/, "") };
-    const last = segments[segments.length - 1];
-    segments[segments.length - 1] = { ...last, text: last.text.replace(/\s+$/, "") };
+function renderBlock(block: TurnBlock, key: number) {
+  switch (block.kind) {
+    case "text":
+      return (
+        <p key={key} className="chat-turn-text">
+          {block.text}
+        </p>
+      );
+    case "tool":
+      return (
+        <div key={key} className="chat-turn-tool">
+          {block.detail !== undefined ? `${block.name} · ${block.detail}` : block.name}
+        </div>
+      );
+    case "tool_result":
+      // 既定折り畳み: 本体は無加工・上限なしで流す（表示予算は消費者=GUIの責務、
+      // 本体 ADR-0032）。開いた時だけ全文をスクロール領域に見せる。
+      return (
+        <details key={key} className="chat-turn-tool-result">
+          <summary>ツール出力</summary>
+          <pre className="chat-turn-tool-result-body">{block.text}</pre>
+        </details>
+      );
+    case "error":
+      return (
+        <div key={key} className="chat-turn-error">
+          {block.message}
+        </div>
+      );
   }
-  return segments.filter((seg) => seg.text !== "");
+}
+
+function renderTurn(message: TurnMessage) {
+  return (
+    <div key={message.id} className="chat-message chat-message--tomo">
+      <span className="chat-message-role">Tomo</span>
+      <div className="chat-turn-blocks">{message.blocks.map((block, i) => renderBlock(block, i))}</div>
+      {message.finished !== undefined && (
+        <div className="chat-turn-footer">
+          {formatDuration(message.finished.durationMs)}
+          {message.finished.costUsd !== undefined && ` · $${message.finished.costUsd.toFixed(4)}`}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
@@ -60,33 +91,38 @@ export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
   }
 
   function renderMessage(message: ChatMessage) {
-    if (message.kind === "user") {
-      return (
-        <div key={message.id} className="chat-message chat-message--user">
-          <span className="chat-message-role">You</span>
-          <p className="chat-message-text">{message.text}</p>
-        </div>
-      );
+    switch (message.kind) {
+      case "user":
+        return (
+          <div key={message.id} className="chat-message chat-message--user">
+            <span className="chat-message-role">You</span>
+            <p className="chat-message-text">{message.text}</p>
+          </div>
+        );
+      case "turn":
+        return renderTurn(message);
+      case "note":
+        return (
+          <div
+            key={message.id}
+            className={message.await ? "chat-message--note chat-message--note-await" : "chat-message--note"}
+          >
+            {message.text}
+          </div>
+        );
+      case "system":
+        return (
+          <div key={message.id} className="chat-message--system">
+            {message.text}
+          </div>
+        );
+      case "stderr":
+        return (
+          <div key={message.id} className="chat-message--stderr">
+            {message.text}
+          </div>
+        );
     }
-    if (message.kind === "system") {
-      return (
-        <div key={message.id} className="chat-message--system">
-          {message.text}
-        </div>
-      );
-    }
-    return (
-      <div key={message.id} className="chat-message chat-message--tomo">
-        <span className="chat-message-role">Tomo</span>
-        <p className="chat-message-text">
-          {displaySegments(message).map((seg, i) => (
-            <span key={i} className={seg.channel === "stderr" ? "chat-segment--stderr" : undefined}>
-              {seg.text}
-            </span>
-          ))}
-        </p>
-      </div>
-    );
   }
 
   return (

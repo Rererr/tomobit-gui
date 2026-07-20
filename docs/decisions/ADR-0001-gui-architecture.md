@@ -61,6 +61,19 @@ GUIバックエンドは `tomobit chat` をパイプ接続の子プロセスと�
 構造化チャネル（例: NDJSONのviewストリーム）が欲しくなったら、
 それは本体側の拡張ADRの論点であり、GUI側でパース職人芸を積まない。
 
+### 追記（2026-07-20・本体 ADR-0032 の採用）
+
+上の「既知の摩擦」と Decision 4 の1行=1ターン前提が、本体
+[ADR-0032](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0032-pipe-chat-first-class.md)
+で解消された。GUIは以下を配線する（パース職人芸は積まないまま、契約に乗る）:
+
+- **ストリーム表示 → 構造化表示**（ADR-0032 Decision 1）: `tomobit chat --view ndjson` で
+  起動し、stdout の全量 NDJSON を行フレーミング＋JSONデコードして `chat:view` で流す。
+  ターン枠・本文ブロック・ツール行・器官の発話（note）を型で判別する。未知 type は無視
+  （契約: 消費者は未知の type を無視せよ）。stderr は契約外の診断として従来どおりチャンク中継
+- **複数行入力**（ADR-0032 Decision 2）: 改行を潰していた flattenTurnLine を、末尾 `\`
+  行継続への encodeTurn に置き換える。意味論は本体 lineedit readCooked に正確に合わせる
+
 ## Decision 3: メモリ管理はSQLite読み取り専用のView
 
 顔窓と同じ姿勢（ADR-0020 Decision 2: `mode=ro` で開き、Viewを導出して見せるだけ）。
@@ -140,6 +153,16 @@ GUIバックエンドは `tomobit chat` をパイプ接続の子プロセスと�
   立てて子プロセスを起動する（GUI設定でOFF可）。顔窓はGUIの隣に浮かぶ
 - GUIヘッダの `Tomo · <ステージ名>` などテキストのViewは導出してよい
   （ADR-0025のテキストフォールバックと同じ位置づけ）
+
+### 追記（2026-07-20・本体 ADR-0032 の採用）
+
+「pipe起動ではTTYゲートで死に配線」という見送り理由が、本体
+[ADR-0032](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0032-pipe-chat-first-class.md)
+Decision 3 で解消された。TTYゲートが「env 沈黙時の既定」に改まり、`TOMOBIT_FACE=1`
+の明示は TTY を問わず窓を開く（presence も同条件で登録され、pipe起点の窓が寿命規律に
+接地する）。GUIは chat 子プロセスの env に `TOMOBIT_FACE=1` を立てる — ただし親環境が
+既に `TOMOBIT_FACE` を明示していれば触らない（ユーザーの `=0` を GUI が黙って覆すのは
+env>config の序列に反する。`chat.go` composeChatEnv）。
 
 ---
 

@@ -1,11 +1,14 @@
-// チャット配線 (ADR-0001 Decision 2): `tomobit chat` をパイプ接続の子プロセス
-// として起動し、stdin へ 1行 = 1ターンを書き、stdout/stderr を届いた順の
-// チャンクのままフロントエンドへ流す。ターン終端の機械可読なフレーミングは
-// 存在しない（ADR-0001 が受け入れた摩擦）ので、構造は読まない — v1 は
-// ストリーム表示で、入力は常時受け付ける。
+// チャット配線 (ADR-0001 Decision 2 / 本体 ADR-0032): `tomobit chat --view ndjson`
+// をパイプ接続の子プロセスとして起動する。stdout は契約上 全量 NDJSON の view
+// ストリーム（1行 = 1 view イベント）なので、行にフレーミングして JSON デコード
+// し chat:view として流す。stderr は契約外の人間向け診断なので、従来どおり届いた
+// 順のチャンクのまま chat:out へ流す。stdin へはターンを書く（複数行入力は末尾
+// `\` 継続でエンコードする — 本体 lineedit readCooked と同じ意味論）。
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -19,7 +22,8 @@ import (
 
 // フロントエンドが購読するイベント名。
 const (
-	eventChatOut  = "chat:out"
+	eventChatOut  = "chat:out"  // stderr（契約外の人間向け診断）のチャンク中継
+	eventChatView = "chat:view" // stdout の NDJSON view イベント（1件 = 1行）
 	eventChatExit = "chat:exit"
 )
 
@@ -47,15 +51,41 @@ type chatProc struct {
 // 伸びるため一呼吸分を取る。超えたら Kill → Wait で確実に回収する。
 const chatShutdownGrace = 15 * time.Second
 
-// flattenTurnLine folds a multi-line draft into the pipe's one-line frame.
-// 改行はスペースに潰す: 非TTYの chat は 1行 = 1ターンで、行継続の構文がない
-// （lineedit の Shift+Enter は raw mode 専用）。素通しすると2行目以降が別ターン
-// として別々に走ってしまうので、言葉を最小限だけ曲げる方を取る。本体側の
-// cooked mode に継続構文が生えたら外す（クロスリポジトリ改修候補）。
-func flattenTurnLine(s string) string {
+// encodeTurn writes a possibly multi-line draft as the pipe's line-continuation
+// wire form (本体 ADR-0032 Decision 2), the encoder side of lineedit readCooked —
+// 末尾 `\` の行は「まだ終わりではない」。意味論を reader に正確に合わせる:
+//
+//   - \r\n / \r を \n に正規化して行に分割
+//   - 最終行以外: 各行の末尾に `\` を1つ足す（元々 `\` で終わっていても reader は
+//     1つだけ剥ぐので内容は保存される）
+//   - 最終行が `\` で終わらない: そのまま + 改行で閉じる
+//   - 最終行が `\` で終わる: `\` を1つ足して書き、続けて空行で閉じる（reader 側で
+//     末尾に改行が1つ付くのは raw mode で同じ操作をした結果と同一 — ADR-0032 が
+//     明記する許容）
+//   - 空文字列は素の空行 "\n"（境界 Feedback への「まだ言えない」回答経路）
+//
+// 改行をスペースへ潰していた旧 flattenTurnLine の置き換え: 言葉を曲げず、本体の
+// 継続構文にそのまま乗せる。
+func encodeTurn(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.ReplaceAll(s, "\n", " ")
+	lines := strings.Split(s, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i < len(lines)-1 {
+			b.WriteString(line)
+			b.WriteString("\\\n")
+			continue
+		}
+		if strings.HasSuffix(line, "\\") {
+			b.WriteString(line)
+			b.WriteString("\\\n\n")
+			continue
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // utf8CompletePrefix returns the length of b's longest prefix that does not
@@ -106,6 +136,25 @@ func composeClaudeArgsAppend(existing, speakingStyle string) string {
 	return existing + " " + arg
 }
 
+// composeChatEnv builds the child chat process's environment (ADR-0001 Decision
+// 4 / 本体 ADR-0032 Decision 3). base は親環境の素通し（TOMOBIT_DB などの本体の
+// env オーバーライドをそのまま効かせる）。喋り方の注入と顔窓のオプトインは互いに
+// 独立で、両方該当すれば直積で両方積まれる。
+//
+// faceSet が真（親が TOMOBIT_FACE を明示している）なら顔窓の env には触らない —
+// ユーザーの明示した =0 を GUI が黙って =1 で覆すのは env>config の序列に反する。
+// 沈黙時だけ =1 を立てて「この pipe の先に人が居る」と宣言する（ADR-0032 Decision 3）。
+func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingAppend string) []string {
+	env := base
+	if style := strings.TrimSpace(speakingStyle); style != "" {
+		env = append(env, "TOMOBIT_CLAUDE_ARGS_APPEND="+composeClaudeArgsAppend(existingAppend, style))
+	}
+	if !faceSet {
+		env = append(env, "TOMOBIT_FACE=1")
+	}
+	return env
+}
+
 // findTomobit looks on PATH first, then in ~/go/bin — a Finder-launched .app
 // inherits the loginwindow PATH, which lacks the go install dir the CLI
 // usually lives in.
@@ -122,14 +171,11 @@ func findTomobit(lookPath func(string) (string, error), userHome func() (string,
 	return "", fmt.Errorf("tomobit が見つからない — 本体を `go install ./cmd/tomobit` して PATH か ~/go/bin に置くこと")
 }
 
-// ensureProcLocked spawns `tomobit chat` if none is running. Caller holds a.mu.
-//
-// 環境は素通しする（TOMOBIT_DB / TOMOBIT_CLAUDE_ARGS などの本体の env
-// オーバーライドがそのまま効く）。TOMOBIT_FACE=1 は立てない — ADR-0001
-// Decision 5 はそれを予定しているが、現行の本体は env より先に TTY ゲートで
-// 顔窓起動を打ち切るため（isTTY(os.Stdout) が pipe では常に偽）、pipe 起動では
-// 死に配線になる。本体側が pipe 起動の TTY ゲート（ADR-0025 の pipe=窓なし前提）
-// を設計し直すまで入れない。
+// ensureProcLocked spawns `tomobit chat --view ndjson` if none is running.
+// Caller holds a.mu. view ストリームで stdout が全量 NDJSON になり、ターン終端が
+// 機械可読になる（本体 ADR-0032 Decision 1）。顔窓のオプトイン（TOMOBIT_FACE=1）は
+// 同 Decision 3 で pipe 起動でも効くようになった — env 合成は composeChatEnv に
+// 切り出す。
 func (a *App) ensureProcLocked() error {
 	if a.proc != nil {
 		return nil
@@ -138,17 +184,14 @@ func (a *App) ensureProcLocked() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(bin, "chat")
-	// 喋り方 (ADR-0001 Decision 4 追記): 空なら env に一切触れず、既存の
-	// TOMOBIT_CLAUDE_ARGS_APPEND（あれば）をそのまま素通しする。
-	// os.Environ() に同キーが残っていても exec.Cmd が重複キーを後勝ちで
-	// dedupe するので、合成済みの値が子へ届く。既存値が引用符不整合だと合成分が
-	// その中に呑まれるが、それは env を手で壊した場合だけ — 本体側パーサが
-	// 警告する（GUI自身の合成出力は常に整形式）。
-	if style := strings.TrimSpace(a.guiConfig.SpeakingStyle); style != "" {
-		existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
-		cmd.Env = append(os.Environ(), "TOMOBIT_CLAUDE_ARGS_APPEND="+composeClaudeArgsAppend(existing, style))
-	}
+	cmd := exec.Command(bin, "chat", "--view", "ndjson")
+	// 喋り方 (ADR-0001 Decision 4) と顔窓 (ADR-0032 Decision 3) を子 env に積む。
+	// os.Environ() に同キーが残っていても exec.Cmd が重複キーを後勝ちで dedupe する
+	// ので、合成済みの値が子へ届く（既存値が引用符不整合だと合成分がその中に呑まれる
+	// が、それは env を手で壊した場合だけ — GUI 自身の合成出力は常に整形式）。
+	_, faceSet := os.LookupEnv("TOMOBIT_FACE")
+	existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
+	cmd.Env = composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)
@@ -171,7 +214,7 @@ func (a *App) ensureProcLocked() error {
 	// (os/exec StdoutPipe の規約)。プロセスが死ねば EOF で必ず抜ける。
 	var readers sync.WaitGroup
 	readers.Add(2)
-	go func() { defer readers.Done(); a.pumpStream(stdout, "stdout") }()
+	go func() { defer readers.Done(); a.pumpViewStream(stdout) }()
 	go func() { defer readers.Done(); a.pumpStream(stderr, "stderr") }()
 	go func() {
 		readers.Wait()
@@ -215,4 +258,52 @@ func (a *App) pumpStream(r io.Reader, channel string) {
 			return
 		}
 	}
+}
+
+// pumpViewStream frames stdout into NDJSON view events (本体 ADR-0032 Decision 1).
+// stdout は契約上 全量 NDJSON なので、読み取りチャンクが行の途中で切れても持ち越し
+// て完全な1行を組み、行ごとに emitViewLine へ渡す。EOF 時に持ち越しが残っていれば
+// 同様に処理する。UTF-8 境界の面倒は要らない — 行は JSON デコードするか丸ごと文字
+// 列化するかで、いずれも完全な行の全バイトを一度に扱う。
+func (a *App) pumpViewStream(r io.Reader) {
+	buf := make([]byte, 4096)
+	var carry []byte
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			carry = append(carry, buf[:n]...)
+			for {
+				i := bytes.IndexByte(carry, '\n')
+				if i < 0 {
+					break
+				}
+				a.emitViewLine(carry[:i])
+				carry = append(carry[:0], carry[i+1:]...)
+			}
+		}
+		if err != nil {
+			if len(carry) > 0 {
+				a.emitViewLine(carry)
+			}
+			return
+		}
+	}
+}
+
+// emitViewLine decodes one NDJSON line and emits it as a chat:view event
+// (本体 ADR-0032 Decision 1). Go は type を解釈せず map をそのまま素通しする —
+// 未知 type の無視は消費者=フロントエンドの責務。JSON デコードに失敗した行は
+// 握り潰さず note にフォールバックする: stdout は契約上 全量 NDJSON なので、
+// 非JSON行は本体のバグであり、可視化して黙らせない。
+func (a *App) emitViewLine(line []byte) {
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	if len(line) == 0 {
+		return
+	}
+	var ev map[string]any
+	if err := json.Unmarshal(line, &ev); err != nil {
+		a.emitEvent(eventChatView, map[string]any{"type": "note", "text": string(line)})
+		return
+	}
+	a.emitEvent(eventChatView, ev)
 }

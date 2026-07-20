@@ -77,12 +77,15 @@ func (a *App) emitEvent(name string, data ...interface{}) {
 	emit(name, data...)
 }
 
-// SendLine sends one line to the chat: a turn, a slash command (/new, /exit
-// もそのまま通る — 区切りの尾部は本体の実装で走る), or an empty line — the
-// boundary's Feedback question is answered with a bare Enter, and outside it
-// the chat skips empty lines, so an accidental one costs nothing.
+// SendLine sends one turn to the chat: a single- or multi-line turn (改行は
+// 末尾 `\` 継続でエンコードされ、本体 cooked mode が1ターンに繋ぎ直す —
+// ADR-0032 Decision 2), a slash command (/new, /exit もそのまま通る — 区切りの
+// 尾部は本体の実装で走る), or an empty line — the boundary's Feedback question
+// is answered with a bare Enter, and outside it the chat skips empty lines, so
+// an accidental one costs nothing. エンコード結果は複数行になりうるが1回の Write
+// で書く（既存の EPIPE 再起動リトライがそのまま効く）。
 func (a *App) SendLine(text string) error {
-	line := flattenTurnLine(text) + "\n"
+	line := encodeTurn(text)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.ensureProcLocked(); err != nil {

@@ -181,9 +181,97 @@
   font-size: 12px;
 }
 
-/* stderr = 本体の警告・エラー。answerと区別する低彩度の琥珀 */
-.chat-segment--stderr {
+/* ターン内の要素（本文ブロック・ツール行・ツール結果・エラー）を縦に積む */
+.chat-turn-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-turn-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* ツール行: 本文と区別する小さめのモノスペースの脇道 */
+.chat-turn-tool {
+  font-size: 12px;
+  color: #8a8dae;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ツール出力: 既定折り畳み（本体は無加工・上限なしで流す — 表示予算は消費者側） */
+.chat-turn-tool-result {
+  font-size: 12px;
+}
+
+.chat-turn-tool-result > summary {
+  cursor: pointer;
+  color: #8a8dae;
+  font-size: 12px;
+}
+
+.chat-turn-tool-result-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background-color: #12141c;
+  border-radius: 6px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #c7c9d6;
+}
+
+/* provider.error: answerと区別する低彩度の琥珀（stderrと同系） */
+.chat-turn-error {
   color: #b08968;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* turn.finished のフッタ: 機械の帳簿（所要時間・コスト）。控えめにミュート */
+.chat-turn-footer {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #6b6e7d;
+}
+
+/* 器官の発話・注記（ターン外）: Tomoの吹き出しでもGUIのsystem注記でもない第三の声。
+   左寄せ・左罫で「会話の脇から差し込まれた声」として区別する */
+.chat-message--note {
+  align-self: flex-start;
+  max-width: 640px;
+  padding: 8px 12px;
+  border-left: 2px solid #3a3d4d;
+  color: #a9abbd;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* 境界のFeedback質問（await:true）: 入力欄で答える対象なので強調する */
+.chat-message--note-await {
+  border-left-color: #d9a441;
+  background-color: #221f17;
+  color: #e6d8bf;
+}
+
+/* stderr = 本体の警告・エラー。契約外の人間向け診断。低彩度の琥珀で区別する */
+.chat-message--stderr {
+  align-self: flex-start;
+  max-width: 640px;
+  padding: 8px 12px;
+  color: #b08968;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .chat-input-bar {

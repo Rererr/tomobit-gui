@@ -22,6 +22,8 @@ func TestE2E_メモリの訂正と忘却がrebuild整合まで通る(t *testing.
 	// env は config claude_args を丸ごと置き換えるため、既存の
 	// --exclude-dynamic-system-prompt-sections も持ち込む。
 	t.Setenv("TOMOBIT_CLAUDE_ARGS", "--model haiku --exclude-dynamic-system-prompt-sections")
+	// 実顔窓を開かない: env 既設定を尊重する仕様（ADR-0032 Decision 3）が前提。
+	t.Setenv("TOMOBIT_FACE", "0")
 
 	app := seedOneRealSession(t)
 
@@ -95,52 +97,55 @@ func TestE2E_メモリの訂正と忘却がrebuild整合まで通る(t *testing.
 }
 
 // seedOneRealSession は chat の実環境1往復（実Provider）で使い捨て台帳に
-// 経験を積む — chat_e2e_test.go と同じ道筋の圧縮版。
+// 経験を積む — chat_e2e_test.go と同じ道筋の圧縮版（view イベント面）。
 func seedOneRealSession(t *testing.T) *App {
 	t.Helper()
 	var mu sync.Mutex
-	var stdout strings.Builder
+	var events []map[string]any
 	exited := make(chan ExitInfo, 1)
 
 	app := NewApp()
 	app.emit = func(name string, data ...interface{}) {
 		switch name {
-		case eventChatOut:
-			c := data[0].(OutChunk)
-			if c.Channel == "stdout" {
-				mu.Lock()
-				stdout.WriteString(c.Text)
-				mu.Unlock()
-			}
+		case eventChatView:
+			mu.Lock()
+			events = append(events, data[0].(map[string]any))
+			mu.Unlock()
 		case eventChatExit:
 			exited <- data[0].(ExitInfo)
 		}
 	}
-	waitFor := func(substr string, timeout time.Duration) {
+	waitFor := func(what string, match func(ev map[string]any) bool, timeout time.Duration) {
 		t.Helper()
 		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
 			mu.Lock()
-			seen := strings.Contains(stdout.String(), substr)
-			mu.Unlock()
-			if seen {
-				return
+			for _, ev := range events {
+				if match(ev) {
+					mu.Unlock()
+					return
+				}
 			}
+			mu.Unlock()
 			time.Sleep(200 * time.Millisecond)
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		t.Fatalf("%q が %s 待っても届かない。stream:\n%s", substr, timeout, stdout.String())
+		t.Fatalf("%s が %s 待っても届かない。events:\n%v", what, timeout, events)
 	}
 
 	if err := app.SendLine("1たす1の答えを半角数字ひとつだけで答えて"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("2", 180*time.Second)
+	waitFor(`text イベントの "2"`, func(ev map[string]any) bool {
+		return ev["type"] == "text" && strings.Contains(toString(ev["text"]), "2")
+	}, 180*time.Second)
 	if err := app.SendLine("/exit"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("どうだった", 30*time.Second)
+	waitFor(`note "どうだった"`, func(ev map[string]any) bool {
+		return ev["type"] == "note" && strings.Contains(toString(ev["text"]), "どうだった")
+	}, 30*time.Second)
 	if err := app.SendLine(""); err != nil { // Feedback は無信号で答える
 		t.Fatal(err)
 	}

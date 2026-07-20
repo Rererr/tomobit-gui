@@ -4,18 +4,25 @@
 経験の記帳とメモリViewへの反映・主観Feedback(1=文句なし)の outcome 反映まで一連PASS）
 の時点で残っている課題。設計上の根拠は各ADRを参照。
 
+## 本体 ADR-0032 で解決（2026-07-20 実装）
+
+3件は本体 [ADR-0032](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0032-pipe-chat-first-class.md)
+（pipe chat の一級市民化 — view ストリーム・行継続・顔窓オプトイン）で解決済み。
+
+- **ターン終端の機械可読フレーミング** → 本体 ADR-0032 Decision 1。`tomobit chat --view ndjson`
+  で stdout が全量 NDJSON の view ストリームになる。GUIは行フレーミング＋JSONデコードで
+  `chat:view` として流し（`chat.go` pumpViewStream）、フロントは構造化表示に置き換えた
+  （`App.tsx` handleViewEvent / `ChatPane.tsx`）。パース職人芸は積まない — 未知 type は
+  無視する契約
+- **複数行入力** → 本体 ADR-0032 Decision 2。cooked mode に末尾 `\` 行継続が生えた。
+  改行を潰す flattenTurnLine を継続化エンコーダ encodeTurn に置き換え（`chat.go`）、
+  フロントは改行を保持したまま送る（`App.tsx` handleSend）
+- **顔窓のGUI起動** → 本体 ADR-0032 Decision 3。TTYゲートが「env 沈黙時の既定」に
+  改まり、`TOMOBIT_FACE=1` の明示が pipe でも窓を開く。GUIは子 env に =1 を立てる
+  （親が明示済みなら尊重して触らない — `chat.go` composeChatEnv）
+
 ## 本体側の設計待ち（GUI単独では進められない）
 
-- **顔窓のGUI起動**（ADR-0001 Decision 5）: pipe起動では本体のTTYゲートが顔窓の
-  自動起動を打ち切るため、`TOMOBIT_FACE=1` を立てても死に配線になる。本体側が
-  pipe=窓なし前提（本体ADR-0025）を設計し直すまで見送り
-  （`chat.go` ensureProcLocked のコメント参照）
-- **複数行入力**: pipe mode は1行=1ターンで行継続の構文が無く、GUIは改行をスペースに
-  潰して送っている（`chat.go` flattenTurnLine）。本体 cooked mode に継続構文が
-  生えたら外す
-- **ターン終端の機械可読フレーミング**（ADR-0001 既知の摩擦）: pipe出力は端末向けの
-  素テキストで、Tomo吹き出しの区切りはユーザー送信のみ。構造化チャネル
-  （NDJSON viewストリーム等）は本体側の拡張ADRの論点 — GUI側でパース職人芸は積まない
 - **ステージ導出式の共有**: Tomo名ヘッダ（2026-07-19 実装）は本体
   `internal/face/stage.go` とその依存の移植（tomobit d4e2412 時点、`stage.go`）で
   導出している。本体の較正ノブ・式の変更には追随が要る（ドリフト検知は
