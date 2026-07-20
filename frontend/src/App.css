@@ -44,6 +44,16 @@
   font-size: 13px;
 }
 
+.session-group-label {
+  margin: 12px 10px 2px;
+  font-size: 11px;
+  color: #9698a8; /* settings-note と同じ AA 対応の明度（#6b6e7dは実測3.46:1でAA未達） */
+}
+
+.session-group-label:first-child {
+  margin-top: 2px;
+}
+
 .session-item {
   display: flex;
   flex-direction: column;

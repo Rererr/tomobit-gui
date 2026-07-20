@@ -43,6 +43,9 @@ function App() {
   const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
   const [sessions, setSessions] = useState<main.SessionDigest[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  // 初回読み込み中だけ立てる（以後の再読み込みは既存の一覧を見せたまま裏で
+  // 差し替える — 会話中の自動リフレッシュのたびに空表示へ点滅させない）。
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   // New chat が /exit を送ってから完了表示までの「区切り中」。イベント購読は
   // 一度きり(deps [])なので ref で最新値を読み、UI（空送信ボタンの活性化）は
   // state で再描画する — 二重管理は setBoundary に閉じ込める。
@@ -75,6 +78,8 @@ function App() {
       setSessionsError(null);
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSessionsLoading(false);
     }
   }
 
@@ -296,6 +301,7 @@ function App() {
         activePane={activePane}
         sessions={sessions}
         sessionsError={sessionsError}
+        sessionsLoading={sessionsLoading}
         selectedSession={selectedSession}
         onNewChat={handleNewChat}
         onSelectPane={setActivePane}

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { main } from "../../wailsjs/go/models";
 import type { PaneId } from "../types";
 
@@ -5,6 +6,7 @@ interface SidebarProps {
   activePane: PaneId;
   sessions: main.SessionDigest[];
   sessionsError: string | null;
+  sessionsLoading: boolean;
   selectedSession: string | null;
   onNewChat: () => void;
   onSelectPane: (pane: PaneId) => void;
@@ -18,6 +20,33 @@ function formatSessionDate(ms: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// intentの表示用整形: 先頭のMarkdown見出し(#)・箇条書き(-/*/+)記号はタイトル
+// としてはただのノイズ（実データで "### 未完了..." のような表示を確認した）。
+// 本文の意味は変えない — 表示側だけの正規化で、台帳のintent自体は触らない。
+function cleanIntent(intent: string): string {
+  return intent.replace(/^(#{1,6}\s+|[-*+]\s+)/, "").trim();
+}
+
+// 一覧が伸びた時の見通し用の日付グループ見出し。並び順はバックエンドの返す
+// 順序をそのまま使う（ここでは境界を検出するだけで再ソートはしない）。
+function sessionDateGroupLabel(ms: number): string {
+  // ローカルの暦日をUTC基点の日数に変換してから引き算する。ローカルのミリ秒
+  // 差で割ると夏時間切り替え日（23h/25hの日）を跨いだ時に日数がずれるが、
+  // UTC.Date.UTCへ写した時点でDSTの影響を受けない整数の「日数」になる。
+  const dayIndex = (d: Date) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+  const daysAgo = dayIndex(new Date()) - dayIndex(new Date(ms));
+  if (daysAgo <= 0) {
+    return "今日";
+  }
+  if (daysAgo === 1) {
+    return "昨日";
+  }
+  if (daysAgo < 7) {
+    return "今週";
+  }
+  return "それ以前";
 }
 
 // 状態の注記は目立つ例外だけ: finished が既定の姿なので書かない。
@@ -38,6 +67,7 @@ export function Sidebar({
   activePane,
   sessions,
   sessionsError,
+  sessionsLoading,
   selectedSession,
   onNewChat,
   onSelectPane,
@@ -54,24 +84,38 @@ export function Sidebar({
       <div className="session-list">
         {sessionsError !== null ? (
           <p className="session-list-placeholder">セッション一覧を読めない: {sessionsError}</p>
+        ) : sessionsLoading ? (
+          <p className="session-list-placeholder">読み込み中…</p>
         ) : sessions.length === 0 ? (
           <p className="session-list-placeholder">セッションはまだありません</p>
         ) : (
-          sessions.map((s) => {
-            const active = activePane === "session" && selectedSession === s.session_id;
-            return (
-              <button
-                key={s.session_id}
-                className={`session-item${active ? " active" : ""}`}
-                aria-current={active ? "page" : undefined}
-                onClick={() => onSelectSession(s.session_id)}
-                title={s.intent}
-              >
-                <span className="session-item-intent">{s.intent}</span>
-                <span className="session-item-meta">{sessionMeta(s)}</span>
-              </button>
-            );
-          })
+          (() => {
+            let lastGroup: string | null = null;
+            return sessions.map((s) => {
+              const group = sessionDateGroupLabel(s.start_ts);
+              const showGroupLabel = group !== lastGroup;
+              lastGroup = group;
+              const active = activePane === "session" && selectedSession === s.session_id;
+              return (
+                <Fragment key={s.session_id}>
+                  {showGroupLabel && (
+                    <div className="session-group-label" role="heading" aria-level={3}>
+                      {group}
+                    </div>
+                  )}
+                  <button
+                    className={`session-item${active ? " active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => onSelectSession(s.session_id)}
+                    title={cleanIntent(s.intent)}
+                  >
+                    <span className="session-item-intent">{cleanIntent(s.intent)}</span>
+                    <span className="session-item-meta">{sessionMeta(s)}</span>
+                  </button>
+                </Fragment>
+              );
+            });
+          })()
         )}
       </div>
 
