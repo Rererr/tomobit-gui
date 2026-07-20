@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AmendExperience, ForgetExperiences, GetMemoryView } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
 
@@ -110,6 +110,45 @@ export function MemoryPane() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [action, setAction] = useState<RowAction | null>(null);
   const [writeStatus, setWriteStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  // 行内フォームを開く「訂正」/「忘れる」ボタン（行id + 種別で引ける）。開いた
+  // 瞬間に対象行の訂正/忘れるボタン自体はアンマウントされる（同じ場所に確認/
+  // 編集UIが差し替わる）ため、クリック時点の要素をrefで覚えても閉じた後には
+  // 既に外れたDOMノードになっている。Mapに都度登録し、閉じる瞬間に
+  // action.id+kindで引き直すことで、再マウントされた新しいボタンへ戻す。
+  const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  // フォームを開いたボタンのkey。busy（書き込み中）を経てnullに落ちても
+  // busyにはkind情報が無いため、開いた瞬間だけここへ覚えておく。
+  const lastTriggerKeyRef = useRef<string | null>(null);
+  // 開いたフォームの最初の操作対象（confirm-forgetは「やめる」、editingは
+  // 最初のtextarea）。破壊的操作をEnterで誤爆させないよう、危険な方ではなく
+  // 安全な方へ既定フォーカスを置く。
+  const firstFieldRef = useRef<HTMLElement | null>(null);
+
+  function triggerKey(kind: "editing" | "confirm-forget", id: string): string {
+    return `${kind}:${id}`;
+  }
+
+  function registerTrigger(key: string) {
+    return (el: HTMLButtonElement | null) => {
+      if (el) {
+        triggerRefs.current.set(key, el);
+      }
+    };
+  }
+
+  // フォームの開閉でフォーカスを追従させる。busy中は書き込みの最中なので
+  // フォーカスを奪わない（次のnullへの遷移で行き先が決まる）。
+  useEffect(() => {
+    if (action === null) {
+      const key = lastTriggerKeyRef.current;
+      if (key !== null) {
+        triggerRefs.current.get(key)?.focus();
+      }
+    } else if (action.kind !== "busy") {
+      lastTriggerKeyRef.current = triggerKey(action.kind, action.id);
+      firstFieldRef.current?.focus();
+    }
+  }, [action]);
 
   async function load() {
     setState({ kind: "loading" });
@@ -124,6 +163,21 @@ export function MemoryPane() {
   useEffect(() => {
     void load();
   }, []);
+
+  // Escapeで行内の確認・編集を閉じる。busyは進行中の書き込みなので対象外
+  // （キャンセル手段が無い＝閉じても実体は止まらず、閉じると空振りに見える）。
+  useEffect(() => {
+    if (action === null || action.kind === "busy") {
+      return;
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setAction(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [action]);
 
   /** 書き込み1回の共通後始末: 成功はサマリ表示 + 再読込（rebuild後の台帳を
    * 見せる）、失敗は本体CLIの検証文言をそのまま見せる — GUIは言い換えない */
@@ -214,6 +268,9 @@ export function MemoryPane() {
                         return (
                           <li key={`${c.scope_key}`} className="memory-item">
                             <div className="memory-item-title">{scopeLabel(c.scope_key)}</div>
+                            <div className="memory-strength-bar" title={`強さ ${percent}%`}>
+                              <div className="memory-strength-bar-fill" style={{ width: `${percent}%` }} />
+                            </div>
                             <div
                               className="memory-item-detail"
                               title="強さ = 成功率の推定（α/(α+β)）／経験量 = 事前分を除いた観測の蓄積（α+β−事前）。時間で減衰する"
@@ -250,6 +307,7 @@ export function MemoryPane() {
                       {rowAction === null && (
                         <div className="memory-item-actions">
                           <button
+                            ref={registerTrigger(triggerKey("editing", e.id))}
                             className="memory-act-btn"
                             disabled={action !== null}
                             onClick={() =>
@@ -265,6 +323,7 @@ export function MemoryPane() {
                             訂正
                           </button>
                           <button
+                            ref={registerTrigger(triggerKey("confirm-forget", e.id))}
                             className="memory-act-btn"
                             disabled={action !== null}
                             onClick={() => setAction({ kind: "confirm-forget", id: e.id })}
@@ -283,7 +342,13 @@ export function MemoryPane() {
                           >
                             忘れる
                           </button>
-                          <button className="memory-act-btn" onClick={() => setAction(null)}>
+                          <button
+                            ref={(el) => {
+                              firstFieldRef.current = el;
+                            }}
+                            className="memory-act-btn"
+                            onClick={() => setAction(null)}
+                          >
                             やめる
                           </button>
                         </div>
@@ -294,6 +359,9 @@ export function MemoryPane() {
                           <label className="memory-edit-label">
                             context（JSONオブジェクト・全置換）
                             <textarea
+                              ref={(el) => {
+                                firstFieldRef.current = el;
+                              }}
                               className="memory-edit-input"
                               rows={2}
                               value={rowAction.context}

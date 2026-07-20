@@ -733,6 +733,22 @@
   overflow-wrap: break-word;
 }
 
+/* 強さ(%)の一覧性を上げる軽量バー。良し悪しの評価色は付けない
+   （強さは単なる推定値であり、低いこと自体は悪ではない） */
+.memory-strength-bar {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: #12141c;
+  overflow: hidden;
+}
+
+.memory-strength-bar-fill {
+  height: 100%;
+  background-color: #4a6cf7;
+  border-radius: 2px;
+}
+
 .memory-note {
   margin-top: 20px;
   color: #9698a8; /* settings-note と同じ AA 対応の明度 */
