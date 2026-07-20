@@ -125,6 +125,7 @@
 }
 
 .chat-pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -139,6 +140,63 @@
   gap: 16px;
 }
 
+/* 追従中でない時だけ現れる「最新へ」ボタン: 読み返し中にストリームで
+   引き戻されない代わりの復帰経路（chat-input-barの上に浮かせる） */
+.chat-jump-bottom-btn {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #3a3d4d;
+  background-color: #23263a;
+  color: #e6e6e6;
+  cursor: pointer;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.chat-jump-bottom-btn:hover {
+  background-color: #2a2d44;
+}
+
+/* ターン開始〜最初のブロックまでの考え中インジケータ */
+.chat-turn-thinking {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.chat-turn-thinking > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #9698a8; /* #6b6e7dはバブル背景に対し非text用の3:1をわずかに割る実測があった */
+  animation: chat-thinking-bounce 1.2s infinite ease-in-out;
+}
+
+.chat-turn-thinking > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-turn-thinking > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-thinking-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 .chat-empty-state {
   margin: auto;
   color: #6b6e7d;
@@ -147,6 +205,11 @@
 
 .chat-message {
   max-width: 640px;
+  /* フレックスアイテムの既定min-width:autoは、改行機会の無い長いトークン
+     （URL・長いテーブルセル等）がある時にmax-widthを無視して広がる原因になる
+     （実測: GFMテーブルにaaa...の長いセルを入れるとウィンドウごと横スクロール
+     可能になる不具合を確認）。0にしてmax-widthを実効させる */
+  min-width: 0;
   padding: 10px 14px;
   border-radius: 10px;
   line-height: 1.5;
@@ -189,9 +252,172 @@
 }
 
 .chat-turn-text {
-  margin: 0;
-  white-space: pre-wrap;
   overflow-wrap: break-word;
+}
+
+/* Tomoの発言のMarkdown描画 (react-markdown + remark-gfm)。要素間の既定marginは
+   吹き出し内で詰めて統一する */
+.md-content > :first-child {
+  margin-top: 0;
+}
+
+.md-content > :last-child {
+  margin-bottom: 0;
+}
+
+.md-content p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.md-content ul,
+.md-content ol {
+  margin: 0 0 8px;
+  padding-left: 1.4em;
+}
+
+.md-content li {
+  margin: 2px 0;
+}
+
+.md-content li > p {
+  margin: 0;
+}
+
+.md-content a {
+  color: #8ca6ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.md-content a:hover {
+  color: #a8bdff;
+}
+
+.md-content strong {
+  font-weight: 600;
+}
+
+.md-content code {
+  background-color: #12141c;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.md-code-block {
+  position: relative;
+  margin: 0 0 8px;
+}
+
+.md-content pre {
+  margin: 0;
+  padding: 28px 10px 8px;
+  background-color: #12141c;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.md-content pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.md-code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #3a3d4d;
+  background-color: #1c1e29;
+  color: #9698a8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.md-code-copy-btn:hover {
+  background-color: #23263a;
+  color: #e6e6e6;
+}
+
+/* 画像は自動読み込みしない代わりのプレースホルダ（受動的な情報流出経路を
+   増やさない判断。Markdown.tsx参照） */
+.md-image-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #12141c;
+  color: #8a8dae;
+  font-size: 12px;
+}
+
+.md-image-open-btn {
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid #3a3d4d;
+  background-color: transparent;
+  color: #9698a8;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.md-image-open-btn:hover {
+  background-color: #23263a;
+  color: #e6e6e6;
+}
+
+.md-content blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid #3a3d4d;
+  color: #a9abbd;
+}
+
+.md-content hr {
+  border: none;
+  border-top: 1px solid #2a2d3a;
+  margin: 12px 0;
+}
+
+.md-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.md-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.md-content th,
+.md-content td {
+  border: 1px solid #2a2d3a;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.md-content th {
+  background-color: #1c1e29;
+}
+
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4 {
+  margin: 12px 0 6px;
+  font-size: 1.05em;
+  font-weight: 600;
 }
 
 /* ツール行: 本文と区別する小さめのモノスペースの脇道 */

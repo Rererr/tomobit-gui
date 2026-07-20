@@ -52,6 +52,21 @@ Go製のデスクトップアプリシェル。システムWebView（macOSはWKW
 - UIライブラリ・CSSフレームワークは雛形段階では固定しない（素のCSSで骨格を
   作り、必要になった時点で選ぶ。雛形に依存を積まない）
 
+### 追記（2026-07-21・Markdown描画ライブラリの採用）
+
+Tomoの発言（LLMの生出力）がMarkdown記法のまま表示されていた実測を受け、
+`react-markdown` + `remark-gfm` を採用した。「必要になった時点で選ぶ」の実行。
+
+- **rehype-rawは使わない**: 生HTMLをASTに含めて実行する経路を作らず、
+  remarkのAST→React要素の変換だけで完結させる。Tomoの出力は信頼できる
+  ローカルProvider由来だが、XSS経路を増やさない設計をコストゼロで選べるなら
+  そちらを取る
+- 却下した対案: `marked` 等でHTML文字列化 → `dangerouslySetInnerHTML` —
+  同じ理由（生HTML実行経路を作る）で却下
+- リンクは素の `<a target="_blank">` にしない: WailsのWebViewは別ウィンドウの
+  browser chromeを持たないため、ナビゲートするとアプリの中身が消える。
+  Wails runtimeの `BrowserOpenURL` でシステムブラウザに渡す
+
 ## Decision 3: LLM API/モデル = 新規選定しない — 既存Provider経路に乗る
 
 会話のLLMは `tomobit chat` のProvider機構（claude-code / codex / human / auto）を

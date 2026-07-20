@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { GetSessionDigest } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
+import { Markdown } from "./Markdown";
 
 interface SessionPaneProps {
   sessionId: string;
@@ -94,7 +95,7 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
         return (
           <div key={i} className="chat-message chat-message--tomo">
             <span className="chat-message-role">Tomo</span>
-            <p className="chat-message-text">{row.text}</p>
+            <Markdown text={row.text} />
           </div>
         );
       case "tool":
