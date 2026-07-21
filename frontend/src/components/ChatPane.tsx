@@ -177,7 +177,16 @@ export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
 
   return (
     <div className="chat-pane">
-      <div className="chat-log" ref={chatLogRef} onScroll={handleLogScroll}>
+      {/* role=log はチャット履歴の標準ARIAパターン。aria-live="assertive" は
+          常時流れるトークンストリームをそのたび読み上げて害になるので使わない。
+          aria-relevant も既定の "additions text" ではなく "additions" に絞る —
+          text を含めると、ストリーミング中に同一ブロックのテキストが伸びるたびに
+          再読み上げが走り、実質assertive相当のうるささになる。additions限定なら
+          新規ノードの出現だけを知らせ、ノード内のテキスト継ぎ足しは無視してほしい
+          という意図だが、aria-relevantの解釈はAT側の実装依存でサポートが不均一
+          （無視されれば既定の"additions text"にフォールバックしうる）— 保証では
+          なく期待。全文の読了はブラウズモードでの読み返しに委ねる。 */}
+      <div className="chat-log" ref={chatLogRef} onScroll={handleLogScroll} role="log" aria-live="polite" aria-relevant="additions">
         {messages.length === 0 ? (
           <div className="chat-empty-state">Tomoに話しかけてみよう</div>
         ) : (

@@ -1,3 +1,39 @@
+:root {
+  /* 面の暗さ順: app < well < surface < raised < active/user-bubble。
+     文字色は text 系、muted-aa は実測コントラスト比に基づく AA 対応トーン
+     （8a8dae/7a7d8c/6b6e7d は 11-16px 級の面で実測 2.9〜4.4:1 に留まり AA(4.5:1)
+     未達だった箇所がある。以後この用途では muted-aa/quiet を使う）。 */
+  --color-bg-app: #14161d;
+  --color-bg-sidebar: #171922;
+  --color-bg-well: #12141c; /* 最も凹んだ面: コード塊・ツール出力本文・強さバーの溝 */
+  --color-bg-surface: #1c1e29; /* カード・入力欄 */
+  --color-bg-raised: #23263a; /* ホバー面と共通のトーン。Tomo吹き出し背景・main-header/chat-input-barの罫にも使う */
+  --color-bg-active: #2a2d44; /* 選択中のnav/セッション項目 */
+  --color-bg-user-bubble: #2b3a55;
+  --color-bg-note-await: #221f17; /* 境界のFeedback質問を強調する下地 */
+
+  --color-border: #3a3d4d;
+  --color-border-subtle: #2a2d3a; /* サイドバー罫・区切り線・テーブル罫 */
+  --color-border-input: #2f3244;
+
+  --color-text: #e6e6e6;
+  --color-text-bright: #ffffff; /* 選択中nav/セッションの強調テキスト */
+  --color-text-secondary: #c7c9d6; /* セッション項目・ツール出力本文などの二次テキスト */
+  --color-text-quiet: #a9abbd; /* 注記・引用・役割ラベルのトーン（実測: raised面6.56:1 / user-bubble面5.03:1） */
+  --color-text-muted: #8a8dae; /* ラベル・detail系の既定ミュート（各カード面で実測4.6:1以上） */
+  --color-text-muted-aa: #9698a8; /* muted よりさらに小さい/薄い面向けのAA対応トーン */
+  --color-text-disabled: #6b6e7d; /* 非activeなUI部品の文字専用（WCAG 1.4.3対象外）。地の文には使わない */
+
+  --color-accent: #4a6cf7;
+  --color-accent-hover: #3c5cd6;
+  --color-link: #8ca6ff;
+  --color-link-hover: #a8bdff;
+  --color-success: #7fb88a;
+  --color-warning: #b08968; /* エラー・stderr等の低彩度琥珀 */
+  --color-warning-accent: #d9a441;
+  --color-warning-bright: #e6d8bf;
+}
+
 #app {
   display: flex;
   flex-direction: row;
@@ -10,24 +46,24 @@
   flex-direction: column;
   width: 260px;
   flex-shrink: 0;
-  background-color: #171922;
-  border-right: 1px solid #2a2d3a;
+  background-color: var(--color-bg-sidebar);
+  border-right: 1px solid var(--color-border-subtle);
   padding: 12px;
 }
 
 .new-chat-btn {
   padding: 10px 12px;
   border-radius: 6px;
-  border: 1px solid #3a3d4d;
+  border: 1px solid var(--color-border);
   background-color: transparent;
-  color: #e6e6e6;
+  color: var(--color-text);
   text-align: left;
   cursor: pointer;
   font-size: 14px;
 }
 
 .new-chat-btn:hover {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .session-list {
@@ -40,14 +76,14 @@
 }
 
 .session-list-placeholder {
-  color: #7a7d8c;
+  color: var(--color-text-muted-aa);
   font-size: 13px;
 }
 
 .session-group-label {
   margin: 12px 10px 2px;
   font-size: 11px;
-  color: #9698a8; /* settings-note と同じ AA 対応の明度（#6b6e7dは実測3.46:1でAA未達） */
+  color: var(--color-text-muted-aa);
 }
 
 .session-group-label:first-child {
@@ -62,18 +98,18 @@
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #c7c9d6;
+  color: var(--color-text-secondary);
   text-align: left;
   cursor: pointer;
 }
 
 .session-item:hover {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .session-item.active {
-  background-color: #2a2d44;
-  color: #ffffff;
+  background-color: var(--color-bg-active);
+  color: var(--color-text-bright);
 }
 
 .session-item-intent {
@@ -85,14 +121,14 @@
 
 .session-item-meta {
   font-size: 11px;
-  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  color: var(--color-text-muted-aa);
 }
 
 .sidebar-footer {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-top: 1px solid #2a2d3a;
+  border-top: 1px solid var(--color-border-subtle);
   padding-top: 12px;
 }
 
@@ -101,19 +137,19 @@
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #c7c9d6;
+  color: var(--color-text-secondary);
   text-align: left;
   cursor: pointer;
   font-size: 14px;
 }
 
 .sidebar-nav-item:hover {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .sidebar-nav-item.active {
-  background-color: #2a2d44;
-  color: #ffffff;
+  background-color: var(--color-bg-active);
+  color: var(--color-text-bright);
 }
 
 .main-pane {
@@ -121,15 +157,15 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: #14161d;
+  background-color: var(--color-bg-app);
 }
 
 /* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView */
 .main-header {
   flex-shrink: 0;
   padding: 10px 24px;
-  border-bottom: 1px solid #23263a;
-  color: #c7c9d6;
+  border-bottom: 1px solid var(--color-bg-raised);
+  color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 600;
 }
@@ -159,16 +195,16 @@
   transform: translateX(-50%);
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid #3a3d4d;
-  background-color: #23263a;
-  color: #e6e6e6;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
   cursor: pointer;
   font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .chat-jump-bottom-btn:hover {
-  background-color: #2a2d44;
+  background-color: var(--color-bg-active);
 }
 
 /* ターン開始〜最初のブロックまでの考え中インジケータ */
@@ -182,7 +218,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #9698a8; /* #6b6e7dはバブル背景に対し非text用の3:1をわずかに割る実測があった */
+  background-color: var(--color-text-muted-aa); /* 非text用3:1もわずかに割る実測があり、text用AA明度と同じ値を流用 */
   animation: chat-thinking-bounce 1.2s infinite ease-in-out;
 }
 
@@ -209,7 +245,7 @@
 
 .chat-empty-state {
   margin: auto;
-  color: #6b6e7d;
+  color: var(--color-text-muted-aa);
   font-size: 16px;
 }
 
@@ -227,18 +263,18 @@
 
 .chat-message--user {
   align-self: flex-end;
-  background-color: #2b3a55;
+  background-color: var(--color-bg-user-bubble);
 }
 
 .chat-message--tomo {
   align-self: flex-start;
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .chat-message-role {
   display: block;
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-quiet);
   margin-bottom: 4px;
 }
 
@@ -250,7 +286,7 @@
 
 .chat-message--system {
   align-self: center;
-  color: #7a7d8c;
+  color: var(--color-text-muted-aa);
   font-size: 12px;
 }
 
@@ -296,13 +332,13 @@
 }
 
 .md-content a {
-  color: #8ca6ff;
+  color: var(--color-link);
   text-decoration: underline;
   cursor: pointer;
 }
 
 .md-content a:hover {
-  color: #a8bdff;
+  color: var(--color-link-hover);
 }
 
 .md-content strong {
@@ -310,7 +346,7 @@
 }
 
 .md-content code {
-  background-color: #12141c;
+  background-color: var(--color-bg-well);
   padding: 1px 5px;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -325,7 +361,7 @@
 .md-content pre {
   margin: 0;
   padding: 28px 10px 8px;
-  background-color: #12141c;
+  background-color: var(--color-bg-well);
   border-radius: 6px;
   overflow-x: auto;
 }
@@ -343,16 +379,16 @@
   right: 6px;
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid #3a3d4d;
-  background-color: #1c1e29;
-  color: #9698a8;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-muted-aa);
   font-size: 11px;
   cursor: pointer;
 }
 
 .md-code-copy-btn:hover {
-  background-color: #23263a;
-  color: #e6e6e6;
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
 }
 
 /* 画像は自動読み込みしない代わりのプレースホルダ（受動的な情報流出経路を
@@ -363,36 +399,36 @@
   gap: 6px;
   padding: 2px 8px;
   border-radius: 4px;
-  background-color: #12141c;
-  color: #8a8dae;
+  background-color: var(--color-bg-well);
+  color: var(--color-text-muted);
   font-size: 12px;
 }
 
 .md-image-open-btn {
   padding: 1px 8px;
   border-radius: 4px;
-  border: 1px solid #3a3d4d;
+  border: 1px solid var(--color-border);
   background-color: transparent;
-  color: #9698a8;
+  color: var(--color-text-muted-aa);
   cursor: pointer;
   font-size: 11px;
 }
 
 .md-image-open-btn:hover {
-  background-color: #23263a;
-  color: #e6e6e6;
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
 }
 
 .md-content blockquote {
   margin: 0 0 8px;
   padding-left: 10px;
-  border-left: 2px solid #3a3d4d;
-  color: #a9abbd;
+  border-left: 2px solid var(--color-border);
+  color: var(--color-text-quiet);
 }
 
 .md-content hr {
   border: none;
-  border-top: 1px solid #2a2d3a;
+  border-top: 1px solid var(--color-border-subtle);
   margin: 12px 0;
 }
 
@@ -412,13 +448,13 @@
 
 .md-content th,
 .md-content td {
-  border: 1px solid #2a2d3a;
+  border: 1px solid var(--color-border-subtle);
   padding: 4px 8px;
   text-align: left;
 }
 
 .md-content th {
-  background-color: #1c1e29;
+  background-color: var(--color-bg-surface);
 }
 
 .md-content h1,
@@ -433,7 +469,7 @@
 /* ツール行: 本文と区別する小さめのモノスペースの脇道 */
 .chat-turn-tool {
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -444,14 +480,14 @@
 
 .chat-turn-tool-result > summary {
   cursor: pointer;
-  color: #8a8dae;
+  color: var(--color-text-muted);
   font-size: 12px;
 }
 
 .chat-turn-tool-result-body {
   margin: 6px 0 0;
   padding: 8px 10px;
-  background-color: #12141c;
+  background-color: var(--color-bg-well);
   border-radius: 6px;
   max-height: 240px;
   overflow: auto;
@@ -459,12 +495,12 @@
   overflow-wrap: break-word;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #c7c9d6;
+  color: var(--color-text-secondary);
 }
 
 /* provider.error: answerと区別する低彩度の琥珀（stderrと同系） */
 .chat-turn-error {
-  color: #b08968;
+  color: var(--color-warning);
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -474,7 +510,7 @@
 .chat-turn-footer {
   margin-top: 6px;
   font-size: 11px;
-  color: #6b6e7d;
+  color: var(--color-text-muted-aa);
 }
 
 /* 器官の発話・注記（ターン外）: Tomoの吹き出しでもGUIのsystem注記でもない第三の声。
@@ -483,8 +519,8 @@
   align-self: flex-start;
   max-width: 640px;
   padding: 8px 12px;
-  border-left: 2px solid #3a3d4d;
-  color: #a9abbd;
+  border-left: 2px solid var(--color-border);
+  color: var(--color-text-quiet);
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -493,9 +529,9 @@
 
 /* 境界のFeedback質問（await:true）: 入力欄で答える対象なので強調する */
 .chat-message--note-await {
-  border-left-color: #d9a441;
-  background-color: #221f17;
-  color: #e6d8bf;
+  border-left-color: var(--color-warning-accent);
+  background-color: var(--color-bg-note-await);
+  color: var(--color-warning-bright);
 }
 
 /* stderr = 本体の警告・エラー。契約外の人間向け診断。低彩度の琥珀で区別する */
@@ -503,7 +539,7 @@
   align-self: flex-start;
   max-width: 640px;
   padding: 8px 12px;
-  color: #b08968;
+  color: var(--color-warning);
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
@@ -514,15 +550,15 @@
   display: flex;
   gap: 8px;
   padding: 16px 24px 24px;
-  border-top: 1px solid #23263a;
+  border-top: 1px solid var(--color-bg-raised);
 }
 
 .chat-input {
   flex: 1;
   resize: none;
-  background-color: #1c1e29;
-  color: #e6e6e6;
-  border: 1px solid #2f3244;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-input);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
@@ -531,7 +567,7 @@
 
 .chat-input:focus {
   outline: none;
-  border-color: #4a6cf7;
+  border-color: var(--color-accent);
 }
 
 .chat-send-btn {
@@ -539,18 +575,18 @@
   padding: 10px 18px;
   border-radius: 8px;
   border: none;
-  background-color: #4a6cf7;
-  color: white;
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
   cursor: pointer;
   font-size: 14px;
 }
 
 .chat-send-btn:hover:not(:disabled) {
-  background-color: #3c5cd6;
+  background-color: var(--color-accent-hover);
 }
 
 .chat-send-btn:disabled {
-  background-color: #3a3d4d;
+  background-color: var(--color-border);
   cursor: default;
 }
 
@@ -574,14 +610,14 @@
 
 .settings-field-label {
   font-size: 13px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
 }
 
 .settings-textarea {
   resize: vertical;
-  background-color: #1c1e29;
-  color: #e6e6e6;
-  border: 1px solid #2f3244;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-input);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
@@ -590,14 +626,12 @@
 
 .settings-textarea:focus {
   outline: none;
-  border-color: #4a6cf7;
+  border-color: var(--color-accent);
 }
 
-/* 注記・空状態の #9698a8: 12px級の説明文が #6b6e7d では 3.6:1 で WCAG AA
-   (4.5:1) を割る実測があった。落ち着きは保ちつつ AA を満たす明度 */
 .settings-note {
   margin: 8px 0 0;
-  color: #9698a8;
+  color: var(--color-text-muted-aa);
   font-size: 12px;
 }
 
@@ -613,18 +647,18 @@
   padding: 10px 18px;
   border-radius: 8px;
   border: none;
-  background-color: #4a6cf7;
-  color: white;
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
   cursor: pointer;
   font-size: 14px;
 }
 
 .settings-save-btn:hover:not(:disabled) {
-  background-color: #3c5cd6;
+  background-color: var(--color-accent-hover);
 }
 
 .settings-save-btn:disabled {
-  background-color: #3a3d4d;
+  background-color: var(--color-border);
   cursor: default;
 }
 
@@ -633,25 +667,25 @@
 }
 
 .settings-status--saved {
-  color: #7fb88a;
+  color: var(--color-success);
 }
 
 .settings-status--error {
-  color: #b08968;
+  color: var(--color-warning);
 }
 
 .settings-retry-btn {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid #3a3d4d;
+  border: 1px solid var(--color-border);
   background-color: transparent;
-  color: #e6e6e6;
+  color: var(--color-text);
   cursor: pointer;
   font-size: 12px;
 }
 
 .settings-retry-btn:hover {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .memory-header {
@@ -663,33 +697,33 @@
 .memory-refresh-btn {
   padding: 6px 14px;
   border-radius: 6px;
-  border: 1px solid #3a3d4d;
+  border: 1px solid var(--color-border);
   background-color: transparent;
-  color: #e6e6e6;
+  color: var(--color-text);
   cursor: pointer;
   font-size: 13px;
 }
 
 .memory-refresh-btn:hover:not(:disabled) {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .memory-refresh-btn:disabled {
-  color: #6b6e7d;
+  color: var(--color-text-disabled);
   cursor: default;
 }
 
 .memory-status {
-  color: #8a8dae;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
 .memory-status--error {
-  color: #b08968;
+  color: var(--color-warning);
 }
 
 .memory-empty-ledger {
-  color: #8a8dae;
+  color: var(--color-text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -701,12 +735,12 @@
 .memory-section h3 {
   margin: 0 0 8px;
   font-size: 14px;
-  color: #c7c9d6;
+  color: var(--color-text-secondary);
 }
 
 .memory-section-empty {
   margin: 0;
-  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  color: var(--color-text-muted-aa);
   font-size: 13px;
 }
 
@@ -720,26 +754,26 @@
 }
 
 .memory-item {
-  background-color: #1c1e29;
-  border: 1px solid #2a2d3a;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 8px;
   padding: 10px 12px;
 }
 
 .memory-item-title {
   font-size: 13px;
-  color: #e6e6e6;
+  color: var(--color-text);
 }
 
 .memory-item-kind {
-  /* カード背景 #1c1e29 上で #6b6e7d は 3.3:1 — detail と同色に揃えて AA */
-  color: #8a8dae;
+  /* text-disabledはこの面で3.3:1に留まりAA未達だった — detailと同色(text-muted)に揃える */
+  color: var(--color-text-muted);
 }
 
 .memory-item-detail {
   margin-top: 4px;
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
   overflow-wrap: break-word;
 }
 
@@ -749,19 +783,19 @@
   margin-top: 6px;
   height: 4px;
   border-radius: 2px;
-  background-color: #12141c;
+  background-color: var(--color-bg-well);
   overflow: hidden;
 }
 
 .memory-strength-bar-fill {
   height: 100%;
-  background-color: #4a6cf7;
+  background-color: var(--color-accent);
   border-radius: 2px;
 }
 
 .memory-note {
   margin-top: 20px;
-  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  color: var(--color-text-muted-aa);
   font-size: 12px;
 }
 
@@ -775,30 +809,30 @@
 .memory-act-btn {
   padding: 3px 10px;
   border-radius: 6px;
-  border: 1px solid #3a3d4d;
+  border: 1px solid var(--color-border);
   background-color: transparent;
-  color: #c7c9d6;
+  color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 12px;
 }
 
 .memory-act-btn:hover:not(:disabled) {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .memory-act-btn:disabled {
-  color: #6b6e7d;
+  color: var(--color-text-disabled);
   cursor: default;
 }
 
 .memory-act-btn--danger {
-  border-color: #b08968;
-  color: #b08968;
+  border-color: var(--color-warning);
+  color: var(--color-warning);
 }
 
 .memory-confirm-text {
   font-size: 12px;
-  color: #b08968;
+  color: var(--color-warning);
 }
 
 .memory-edit-form {
@@ -813,7 +847,7 @@
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
 }
 
 .memory-edit-input {
@@ -821,9 +855,9 @@
   box-sizing: border-box;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #3a3d4d;
-  background-color: #12141c;
-  color: #e6e6e6;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-well);
+  color: var(--color-text);
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
@@ -832,7 +866,7 @@
 .memory-edit-note {
   margin: 0;
   font-size: 12px;
-  color: #9698a8;
+  color: var(--color-text-muted-aa);
 }
 
 .memory-group {
@@ -845,15 +879,15 @@
   gap: 10px;
   padding: 8px 10px;
   border-radius: 8px;
-  background-color: #1c1e29;
-  border: 1px solid #2a2d3a;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
   cursor: pointer;
 }
 
 /* display:flex は details の既定マーカーを消すので、開閉の目印を明示する */
 .memory-group-summary::before {
   content: "▸";
-  color: #8a8dae;
+  color: var(--color-text-muted);
   font-size: 11px;
 }
 
@@ -862,12 +896,12 @@
 }
 
 .memory-group-summary:hover {
-  background-color: #23263a;
+  background-color: var(--color-bg-raised);
 }
 
 .memory-group-stats {
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
 }
 
 .memory-group > .memory-list {
@@ -895,12 +929,12 @@
 
 .session-pane-status {
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
 }
 
 .session-pane-note {
   margin: 8px 0 16px;
-  color: #9698a8; /* settings-note と同じ AA 対応の明度 */
+  color: var(--color-text-muted-aa);
   font-size: 12px;
 }
 
@@ -913,13 +947,13 @@
 .session-digest-tool {
   align-self: flex-start;
   font-size: 12px;
-  color: #8a8dae;
+  color: var(--color-text-muted);
   padding-left: 14px;
 }
 
 .session-digest-error {
   align-self: flex-start;
   font-size: 12px;
-  color: #b08968; /* stderr と同じ低彩度の琥珀 */
+  color: var(--color-warning); /* stderr と同じ低彩度の琥珀 */
   padding-left: 14px;
 }

@@ -10,6 +10,7 @@ import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { main } from "../wailsjs/go/models";
 import type { ChatMessage, PaneId, StreamChannel, TurnBlock } from "./types";
 import { asNumber, asString, isViewEvent } from "./types";
+import { errorMessage } from "./errorMessage";
 
 let nextMessageId = 0;
 
@@ -77,7 +78,7 @@ function App() {
       setSessions(list.sessions);
       setSessionsError(null);
     } catch (err) {
-      setSessionsError(err instanceof Error ? err.message : String(err));
+      setSessionsError(errorMessage(err));
     } finally {
       setSessionsLoading(false);
     }
@@ -243,7 +244,7 @@ function App() {
     try {
       await SendLine(line);
     } catch (err) {
-      appendSystem(`送信に失敗: ${err instanceof Error ? err.message : String(err)}`);
+      appendSystem(`送信に失敗: ${errorMessage(err)}`);
     }
   }
 
@@ -257,7 +258,7 @@ function App() {
     try {
       started = await EndTask();
     } catch (err) {
-      appendSystem(`区切りに失敗: ${err instanceof Error ? err.message : String(err)}`);
+      appendSystem(`区切りに失敗: ${errorMessage(err)}`);
       setActivePane("chat");
       return;
     }

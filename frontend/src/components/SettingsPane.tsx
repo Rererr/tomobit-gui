@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { GetGUIConfig, SaveGUIConfig } from "../../wailsjs/go/main/App";
+import { errorMessage } from "../errorMessage";
 
 type SaveState = { kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string };
 type LoadState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string };
@@ -20,7 +21,7 @@ export function SettingsPane() {
     } catch (err) {
       setLoadState({
         kind: "error",
-        message: `読み込みに失敗: ${err instanceof Error ? err.message : String(err)}`,
+        message: `読み込みに失敗: ${errorMessage(err)}`,
       });
     }
   }
@@ -37,7 +38,7 @@ export function SettingsPane() {
     } catch (err) {
       setSaveState({
         kind: "error",
-        message: `保存に失敗: ${err instanceof Error ? err.message : String(err)}`,
+        message: `保存に失敗: ${errorMessage(err)}`,
       });
     }
   }

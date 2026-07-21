@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AmendExperience, ForgetExperiences, GetMemoryView } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
+import { errorMessage } from "../errorMessage";
 
 type LoadState =
   | { kind: "loading" }
@@ -13,10 +14,6 @@ type RowAction =
   | { kind: "confirm-forget"; id: string }
   | { kind: "editing"; id: string; context: string; outcome: string; provider: string }
   | { kind: "busy"; id: string };
-
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString();
@@ -156,7 +153,7 @@ export function MemoryPane() {
       const view = await GetMemoryView();
       setState({ kind: "loaded", view });
     } catch (err) {
-      setState({ kind: "error", message: errText(err) });
+      setState({ kind: "error", message: errorMessage(err) });
     }
   }
 
@@ -188,7 +185,7 @@ export function MemoryPane() {
       setAction(null);
       await load();
     } catch (err) {
-      setWriteStatus({ ok: false, text: errText(err) });
+      setWriteStatus({ ok: false, text: errorMessage(err) });
       setAction(null);
     }
   }

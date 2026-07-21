@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { GetSessionDigest } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
 import { Markdown } from "./Markdown";
+import { errorMessage } from "../errorMessage";
 
 interface SessionPaneProps {
   sessionId: string;
@@ -74,7 +75,7 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
       })
       .catch((err: unknown) => {
         if (!stale) {
-          setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+          setState({ kind: "error", message: errorMessage(err) });
         }
       });
     return () => {
