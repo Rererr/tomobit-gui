@@ -21,6 +21,27 @@
   改まり、`TOMOBIT_FACE=1` の明示が pipe でも窓を開く。GUIは子 env に =1 を立てる
   （親が明示済みなら尊重して触らない — `chat.go` composeChatEnv）
 
+## 本体 ADR-0034 で解決（2026-07-21）
+
+- **忘れた経験の世代再浮上**（実測 2026-07-19、GUI e2e で観測: 人が訂正→忘却した
+  経験の機械知覚版が戻った）→ 本体
+  [ADR-0034](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0034-forgetting-reach.md)。
+  `forget --id` は現行世代の行のみを受理し、同じ (session, kind) の下位世代も
+  併せて削除するようになった（削除後に max(extractor_ver) が下がる経路が構造的に消えた）。
+  巻き添え行数は 1行サマリに `+N superseded rows` として出る。
+  **GUI 側の変更は不要** — メモリViewは experiences_current を映すので、
+  View から辿れる id は常に現行世代である（ADR-0034 Consequences）。
+  BACKLOG が挙げた対案のうち「(session, kind, ts) 単位のカスケード」は
+  ADR-0034 で却下されている（kind=preference は同一 ts の行が複数生えうるため
+  系譜キーとして単射でない）
+
+- **境界の器官が GUI でも発火する**（本体
+  [ADR-0035](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0035-boundary-organs-reach-the-pipe.md)）:
+  Tomo の質問（ADR-0007）と鏡（ADR-0015）は `isTTY(os.Stdin)` ゲートで閉じており、
+  pipe で chat を飼う GUI では構造上一度も発火していなかった（Feedback だけが届いていた）。
+  対人の信号が `--view ndjson` になり、両器官も `{"type":"note",...,"await":true}` として届く。
+  **GUI 側の配線変更は不要** — Feedback の質問を既に同じ形で受けている
+
 ## 本体側の設計待ち（GUI単独では進められない）
 
 - **ステージ導出式の共有**: Tomo名ヘッダ（2026-07-19 実装）は本体
@@ -28,14 +49,6 @@
   導出している。本体の較正ノブ・式の変更には追随が要る（ドリフト検知は
   `stage_test.go` の opt-in 照合テストによる手動確認のみ）。恒久解
   （本体の公開API化 or viewストリームへの stage 掲載）は本体側ADRの論点
-
-- **忘れた経験の世代再浮上**（実測 2026-07-19）: 本体 `forget --id` は指名行のみを
-  消すため、amend で世代が積まれた (session, kind) の現行世代だけを忘れると、
-  旧世代が experiences_current の現行として再浮上する（GUI e2e で観測:
-  人が訂正→忘却した経験の機械知覚版が戻った。`memory_e2e_test.go` の観測ログ）。
-  view は真実を映すので GUI は正直だが、「忘れたつもり」を作る本体側の論点 —
-  系譜（session, kind, ts は世代間で保持される）単位のカスケード削除か、
-  ADR-0033 への意味の明文化が要る。GUI はこの判断を先取りしない
 
 GUI側の未実装 3件（Tomo名ヘッダ / セッション一覧のダイジェスト要約 /
 connections の Provider 単位集約）は 2026-07-19 に実装済み。
