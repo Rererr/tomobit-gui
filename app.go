@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"time"
@@ -86,23 +85,63 @@ func (a *App) emitEvent(name string, data ...interface{}) {
 // で書く（既存の EPIPE 再起動リトライがそのまま効く）。
 func (a *App) SendLine(text string) error {
 	line := encodeTurn(text)
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if err := a.ensureProcLocked(); err != nil {
+	p, err := a.sendProc()
+	if err != nil {
 		return err
 	}
-	if _, err := io.WriteString(a.proc.stdin, line); err != nil {
-		// The process died since the last send (EPIPE). Restart once and
-		// resend, so one crashed session costs a retry, not a dead app.
-		a.proc = nil
-		if err2 := a.ensureProcLocked(); err2 != nil {
-			return fmt.Errorf("chat の再起動に失敗: %w (書き込み失敗: %v)", err2, err)
-		}
-		if _, err2 := io.WriteString(a.proc.stdin, line); err2 != nil {
-			return fmt.Errorf("chat への書き込みに失敗: %w", err2)
-		}
+	return a.writeLine(p, line)
+}
+
+// writeLine writes line to p, restarting the chat process once and
+// resending on failure (EPIPE: the process died since the last send), so one
+// crashed session costs a retry, not a dead app. The write itself happens
+// under p.writeMu only — not a.mu — because the child may be mid-turn and
+// not reading stdin: a full pipe buffer blocks the write, and a.mu must stay
+// free during that block so shutdown (and any other SendLine/EndTask call)
+// never queues behind it.
+func (a *App) writeLine(p *chatProc, line string) error {
+	err := p.write(line)
+	if err == nil {
+		return nil
+	}
+	a.invalidateProc(p)
+	p2, err2 := a.sendProc()
+	if err2 != nil {
+		return fmt.Errorf("chat の再起動に失敗: %w (書き込み失敗: %v)", err2, err)
+	}
+	if err2 := p2.write(line); err2 != nil {
+		return fmt.Errorf("chat への書き込みに失敗: %w", err2)
 	}
 	return nil
+}
+
+// sendProc returns the current chat process, spawning one under a.mu if none
+// is running, but never once a.stopping is set: shutdown clears a.proc and
+// sets a.stopping together in one lock hold, so any sendProc call that
+// observes stopping is guaranteed to run after that hold — spawning past it
+// would create a process shutdown has already stopped waiting for.
+func (a *App) sendProc() (*chatProc, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopping {
+		return nil, fmt.Errorf("chat はシャットダウン中のため送信できません")
+	}
+	if err := a.ensureProcLocked(); err != nil {
+		return nil, err
+	}
+	return a.proc, nil
+}
+
+// invalidateProc drops a.proc if it still equals stale — the process a write
+// just failed against — so the next sendProc spawns a replacement. The
+// equality check keeps a slow caller (its write held no lock) from
+// clobbering a process another goroutine already restarted in the meantime.
+func (a *App) invalidateProc(stale *chatProc) {
+	a.mu.Lock()
+	if a.proc == stale {
+		a.proc = nil
+	}
+	a.mu.Unlock()
 }
 
 // EndTask ends the running session by sending "/exit" — New chat's boundary
@@ -111,13 +150,16 @@ func (a *App) SendLine(text string) error {
 // 既存の EPIPE 再起動に乗る)。true はプロセスへ /exit を送ったことを示す。
 // 走行中プロセスが無ければ false — 何も起動しない: 区切る対象が無いのに
 // 新しいセッションを立てて即座に区切るのは、この呼び出しの意味に反する。
+// a.stopping 下では a.proc は shutdown により同じロック下で既に nil にされて
+// いるため、ここで改めて確認する必要はない。
 func (a *App) EndTask() (bool, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.proc == nil {
+	p := a.proc
+	a.mu.Unlock()
+	if p == nil {
 		return false, nil
 	}
-	if _, err := io.WriteString(a.proc.stdin, "/exit\n"); err != nil {
+	if err := p.write("/exit\n"); err != nil {
 		return false, fmt.Errorf("chat への /exit 送信に失敗: %w", err)
 	}
 	return true, nil

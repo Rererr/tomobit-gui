@@ -41,9 +41,24 @@ type ExitInfo struct {
 // chatProc is one running `tomobit chat`. done closes after Wait returns, so
 // shutdown can bound its patience on it.
 type chatProc struct {
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	done  chan struct{}
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	done    chan struct{}
+	writeMu sync.Mutex // serializes write calls; deliberately not a.mu (see write)
+}
+
+// write serializes this proc's stdin writes against other write calls on the
+// same proc (e.g. a SendLine racing an EndTask), so a multi-line turn can't
+// interleave with another caller's bytes in the child's pipe. It holds only
+// writeMu, never a.mu: the child may be mid-turn and not reading stdin, so
+// this can block on a full pipe buffer, and shutdown must be able to close
+// stdin — which the Go runtime's poller-integrated I/O unblocks a pending
+// write with an error — without waiting behind app-state lock holders.
+func (p *chatProc) write(s string) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	_, err := io.WriteString(p.stdin, s)
+	return err
 }
 
 // chatShutdownGrace は閉窓時に子プロセスの区切り（Feedback の EOF → 知覚）を
