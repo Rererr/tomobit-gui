@@ -115,6 +115,7 @@ export namespace main {
 	export class GUIConfig {
 	    speaking_style: string;
 	    face_enabled?: boolean;
+	    transcript_cache?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIConfig(source);
@@ -124,6 +125,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.speaking_style = source["speaking_style"];
 	        this.face_enabled = source["face_enabled"];
+	        this.transcript_cache = source["transcript_cache"];
 	    }
 	}
 	export class MemoryView {
@@ -269,6 +271,20 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class SessionScrollback {
+	    exists: boolean;
+	    events: any[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionScrollback(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.exists = source["exists"];
+	        this.events = source["events"];
+	    }
 	}
 	export class TomoStatus {
 	    exists: boolean;

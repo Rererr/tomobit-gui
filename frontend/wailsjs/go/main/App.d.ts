@@ -14,6 +14,8 @@ export function GetMemoryView():Promise<main.MemoryView>;
 
 export function GetSessionDigest(arg1:string):Promise<main.SessionDetail>;
 
+export function GetSessionScrollback(arg1:string):Promise<main.SessionScrollback>;
+
 export function GetSessions():Promise<main.SessionList>;
 
 export function GetTomoStatus():Promise<main.TomoStatus>;

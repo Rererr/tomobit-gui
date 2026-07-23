@@ -273,7 +273,7 @@ func TestPumpViewStream_stdoutをNDJSONイベント列にフレーミングす�
 				defer mu.Unlock()
 				got = append(got, data[0].(map[string]any))
 			}
-			app.pumpViewStream(&chunkReader{chunks: append([][]byte(nil), c.chunks...)})
+			app.pumpViewStream(&chunkReader{chunks: append([][]byte(nil), c.chunks...)}, nil)
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("events = %#v, want %#v", got, c.want)
 			}

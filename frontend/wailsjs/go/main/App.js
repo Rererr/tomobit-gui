@@ -26,6 +26,10 @@ export function GetSessionDigest(arg1) {
   return window['go']['main']['App']['GetSessionDigest'](arg1);
 }
 
+export function GetSessionScrollback(arg1) {
+  return window['go']['main']['App']['GetSessionScrollback'](arg1);
+}
+
 export function GetSessions() {
   return window['go']['main']['App']['GetSessions']();
 }

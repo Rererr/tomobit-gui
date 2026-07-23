@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
-import { GetSessionDigest } from "../../wailsjs/go/main/App";
+import { GetSessionDigest, GetSessionScrollback } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
+import type { ChatMessage } from "../types";
+import { foldViewEvents } from "../viewFold";
 import { Markdown } from "./Markdown";
+import { MessageView } from "./ChatMessageView";
 import { errorMessage } from "../errorMessage";
 
 interface SessionPaneProps {
   sessionId: string;
 }
 
+// ヘッダ（開始時刻・状態）は常に台帳ダイジェストから取り、本文はスクロール
+// バックが在れば全文、無ければダイジェストで描く（ADR-0003 Decision 1 の
+// フォールバック）。header を全文モードでもダイジェストから引くのは、開始時刻・
+// 状態が台帳の真実であり view ストリームから導くより正しいため。
 type LoadState =
   | { kind: "loading" }
-  | { kind: "loaded"; detail: main.SessionDetail }
+  | { kind: "loaded"; detail: main.SessionDetail; transcript: ChatMessage[] | null }
   | { kind: "error"; message: string };
 
 /** 表示用に畳んだダイジェスト行。連続するTomo本文は1つの吹き出しに、
@@ -67,11 +74,25 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
   useEffect(() => {
     let stale = false;
     setState({ kind: "loading" });
-    GetSessionDigest(sessionId)
-      .then((detail) => {
-        if (!stale) {
-          setState({ kind: "loaded", detail });
+    // ダイジェスト（ヘッダ＋全文が無いときの本文）とスクロールバック（全文）を
+    // 並行して取る。GetSessionScrollback は台帳照会を兼ね、忘却済み sid の
+    // 全文を削除してから「無い」と返す（ADR-0003 Decision 2）ので、ここを通る
+    // だけで忘却との整合が保たれる。
+    Promise.all([GetSessionDigest(sessionId), GetSessionScrollback(sessionId)])
+      .then(([detail, scrollback]) => {
+        if (stale) {
+          return;
         }
+        // ユーザーの発話は view ストリームに乗らない（実測）ので、台帳ダイジェスト
+        // の intent を n で引ける表にして全文へ差し込む（viewFold の userTurnsByN）。
+        const userTurnsByN: Record<number, string> = {};
+        for (const item of detail.items) {
+          if (item.kind === "user") {
+            userTurnsByN[item.n] = item.text;
+          }
+        }
+        const transcript = scrollback.exists ? foldViewEvents(scrollback.events, userTurnsByN) : null;
+        setState({ kind: "loaded", detail, transcript });
       })
       .catch((err: unknown) => {
         if (!stale) {
@@ -83,7 +104,7 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
     };
   }, [sessionId]);
 
-  function renderRow(row: ViewRow, i: number) {
+  function renderDigestRow(row: ViewRow, i: number) {
     switch (row.kind) {
       case "user":
         return (
@@ -135,13 +156,29 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
               {new Date(state.detail.start_ts).toLocaleString()} ・{statusLabel(state.detail.status)}
             </span>
           </div>
-          <p className="session-pane-note">
-            台帳の知覚用ダイジェストからの再構成 — 会話の全文ではない（ADR-0001）。
-            ツール出力・整形は残っていない
-          </p>
-          <div className="session-digest-log">
-            {foldItems(state.detail.items).map(renderRow)}
-          </div>
+          {state.transcript !== null ? (
+            <>
+              <p className="session-pane-note">
+                スクロールバックからの全文（ADR-0003） — ライブと同じ表示。
+                Tomoの応答はスクロールバックから、あなたの発話は台帳の記録（verbatim）から復元
+              </p>
+              <div className="session-digest-log">
+                {state.transcript.map((message) => (
+                  <MessageView key={message.id} message={message} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="session-pane-note">
+                台帳の知覚用ダイジェストからの再構成 — 会話の全文ではない（ADR-0001）。
+                ツール出力・整形は残っていない
+              </p>
+              <div className="session-digest-log">
+                {foldItems(state.detail.items).map(renderDigestRow)}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

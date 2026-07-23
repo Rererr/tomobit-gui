@@ -16,6 +16,10 @@ export function SettingsPane() {
   const [savedStyle, setSavedStyle] = useState<string | null>(null);
   const [faceEnabled, setFaceEnabled] = useState<boolean | null>(null);
   const [savedFaceEnabled, setSavedFaceEnabled] = useState<boolean | null>(null);
+  // 会話の全文を残す (ADR-0003 Decision 0)。既定 OFF — キー無しは false 扱い
+  // （faceWindowEnabled と違い未設定でも ON にしない）。
+  const [transcriptCache, setTranscriptCache] = useState<boolean | null>(null);
+  const [savedTranscriptCache, setSavedTranscriptCache] = useState<boolean | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
 
@@ -28,6 +32,9 @@ export function SettingsPane() {
       const enabled = faceWindowEnabled(config.face_enabled);
       setFaceEnabled(enabled);
       setSavedFaceEnabled(enabled);
+      const cache = config.transcript_cache === true;
+      setTranscriptCache(cache);
+      setSavedTranscriptCache(cache);
       setLoadState({ kind: "ready" });
     } catch (err) {
       setLoadState({
@@ -46,9 +53,14 @@ export function SettingsPane() {
       // 保存操作は loadState "ready" の間しか到達しない（下の保存ボタンの描画条件）
       // ので faceEnabled は load() で既に確定済みだが、型上は null を許すため
       // 未確定既定の ON にフォールバックしておく。
-      await SaveGUIConfig({ speaking_style: speakingStyle, face_enabled: faceEnabled ?? true });
+      await SaveGUIConfig({
+        speaking_style: speakingStyle,
+        face_enabled: faceEnabled ?? true,
+        transcript_cache: transcriptCache ?? false,
+      });
       setSavedStyle(speakingStyle);
       setSavedFaceEnabled(faceEnabled);
+      setSavedTranscriptCache(transcriptCache);
       setSaveState({ kind: "saved" });
     } catch (err) {
       setSaveState({
@@ -60,7 +72,8 @@ export function SettingsPane() {
 
   const dirty =
     (savedStyle !== null && speakingStyle !== savedStyle) ||
-    (savedFaceEnabled !== null && faceEnabled !== savedFaceEnabled);
+    (savedFaceEnabled !== null && faceEnabled !== savedFaceEnabled) ||
+    (savedTranscriptCache !== null && transcriptCache !== savedTranscriptCache);
 
   return (
     <div className="settings-pane">
@@ -97,6 +110,24 @@ export function SettingsPane() {
         <span>顔窓を開く</span>
       </label>
       <p className="settings-note">次のチャット（New chatで区切った後）から反映される</p>
+
+      <label className="settings-checkbox-field">
+        <input
+          type="checkbox"
+          checked={transcriptCache ?? false}
+          onChange={(event) => {
+            setTranscriptCache(event.target.checked);
+            setSaveState({ kind: "idle" });
+          }}
+          disabled={transcriptCache === null}
+        />
+        <span>会話の全文を残す</span>
+      </label>
+      <p className="settings-note">
+        有効な間だけ ~/.tomobit/gui-scrollback/ に会話の全文を平文で保存し、過去セッションを全文で読み返せるようにする。
+        有効化は次のチャット（New chatで区切った後）から、無効化は即時（現行セッションの以後の記録も止まる）。
+        OFFに戻しても既に保存した分は残る。端末の忘却（forget --session）で消したセッションは、GUIも次回起動/区切りで追随して消す
+      </p>
 
       {loadState.kind === "loading" && <p className="settings-status">読み込み中…</p>}
       {loadState.kind === "error" && (

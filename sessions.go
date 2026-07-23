@@ -82,12 +82,16 @@ func (a *App) GetSessions() (SessionList, error) {
 	defer rows.Close()
 
 	bySession := map[string]*SessionDigest{}
+	// liveSIDs は台帳に生きているセッションの集合 — スクロールバックの忘却 GC
+	// (C-1) の照合基準。ここに無い sid のファイルは、台帳から消えた=忘却済み。
+	liveSIDs := map[string]bool{}
 	for rows.Next() {
 		var sid, typ, payload string
 		var ts int64
 		if err := rows.Scan(&sid, &ts, &typ, &payload); err != nil {
 			return SessionList{}, fmt.Errorf("events の読み取りに失敗: %w", err)
 		}
+		liveSIDs[sid] = true
 		d := bySession[sid]
 		if d == nil {
 			d = &SessionDigest{SessionID: sid, StartTS: ts, Status: "open"}
@@ -113,6 +117,11 @@ func (a *App) GetSessions() (SessionList, error) {
 	if err := rows.Err(); err != nil {
 		return SessionList{}, fmt.Errorf("events の読み取りに失敗: %w", err)
 	}
+
+	// 台帳を読み切った直後に忘却 GC を走らせる (C-1): 起動時・セッション境界ごとに
+	// GetSessions は呼ばれるので、忘却の器官が消したセッションのスクロールバックは
+	// 次に GUI が台帳を見たこの瞬間に追随して消える。best-effort — 一覧は止めない。
+	sweepForgottenScrollback(liveSIDs)
 
 	for _, d := range bySession {
 		if d.Intent == "" {

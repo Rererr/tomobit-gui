@@ -21,6 +21,12 @@ type GUIConfig struct {
 	// 現行挙動（ON）のまま読める必要がある。plain bool では両者が区別できず
 	// 後方互換が壊れる。
 	FaceEnabled *bool `json:"face_enabled,omitempty"`
+
+	// TranscriptCache は会話全文のスクロールバック永続 (ADR-0003 Decision 0)。
+	// FaceEnabled と同じ tri-state ポインタだが既定は逆で、キー無し=OFF —
+	// 機微の永続は同意ゲートの向こう側なので、人が明示 true を入れるまで
+	// 1バイトも書かない（既存 gui.json にキーが無いのが安全側の初期状態）。
+	TranscriptCache *bool `json:"transcript_cache,omitempty"`
 }
 
 // FaceWindowEnabled resolves the tri-state (unset/ON/explicit OFF) to the
@@ -28,6 +34,13 @@ type GUIConfig struct {
 // も顔窓が黙って閉じない後方互換。
 func (c GUIConfig) FaceWindowEnabled() bool {
 	return c.FaceEnabled == nil || *c.FaceEnabled
+}
+
+// TranscriptCacheEnabled resolves the tri-state (unset/ON/explicit OFF) to the
+// bool the scrollback writer gates on. Unset means OFF (ADR-0003 Decision 0) —
+// FaceWindowEnabled の逆の既定: 機微の永続は明示 true が来るまで始めない。
+func (c GUIConfig) TranscriptCacheEnabled() bool {
+	return c.TranscriptCache != nil && *c.TranscriptCache
 }
 
 func guiConfigPath() (string, error) {

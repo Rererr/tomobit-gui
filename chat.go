@@ -241,7 +241,8 @@ func (a *App) ensureProcLocked() error {
 	// (os/exec StdoutPipe の規約)。プロセスが死ねば EOF で必ず抜ける。
 	var readers sync.WaitGroup
 	readers.Add(2)
-	go func() { defer readers.Done(); a.pumpViewStream(stdout) }()
+	sb := a.newScrollbackWriter()
+	go func() { defer readers.Done(); a.pumpViewStream(stdout, sb) }()
 	go func() { defer readers.Done(); a.pumpStream(stderr, "stderr") }()
 	go func() {
 		readers.Wait()
@@ -292,7 +293,7 @@ func (a *App) pumpStream(r io.Reader, channel string) {
 // て完全な1行を組み、行ごとに emitViewLine へ渡す。EOF 時に持ち越しが残っていれば
 // 同様に処理する。UTF-8 境界の面倒は要らない — 行は JSON デコードするか丸ごと文字
 // 列化するかで、いずれも完全な行の全バイトを一度に扱う。
-func (a *App) pumpViewStream(r io.Reader) {
+func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 	buf := make([]byte, 4096)
 	var carry []byte
 	for {
@@ -304,16 +305,56 @@ func (a *App) pumpViewStream(r io.Reader) {
 				if i < 0 {
 					break
 				}
+				if sb != nil {
+					sb.record(carry[:i])
+				}
 				a.emitViewLine(carry[:i])
 				carry = append(carry[:0], carry[i+1:]...)
 			}
 		}
 		if err != nil {
 			if len(carry) > 0 {
+				if sb != nil {
+					sb.record(carry)
+				}
 				a.emitViewLine(carry)
+			}
+			if sb != nil {
+				sb.close()
 			}
 			return
 		}
+	}
+}
+
+// newScrollbackWriter builds the per-session scrollback writer, but only past
+// the consent gate (ADR-0003 Decision 0): guiConfig.TranscriptCacheEnabled が
+// false なら nil を返し、pumpViewStream は 1 バイトも書かない。Caller は
+// ensureProcLocked で a.mu を保持しているため a.guiConfig の読みは安全。
+// 書き込み診断はチャットを止めず、既存の chat:out stderr 経路へ1行流す。
+func (a *App) newScrollbackWriter() *scrollbackWriter {
+	if !a.guiConfig.TranscriptCacheEnabled() {
+		return nil
+	}
+	dir, err := scrollbackDir()
+	if err != nil {
+		a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: "gui-scrollback: 保存先の解決に失敗: " + err.Error() + "\n"})
+		return nil
+	}
+	return &scrollbackWriter{
+		dir:   dir,
+		limit: scrollbackTotalLimit,
+		onErr: func(msg string) {
+			a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: msg + "\n"})
+		},
+		// 各行で現在の同意状態を再照合する (W-1): SaveGUIConfig が走行中に OFF へ
+		// 撤回したら、このセッションの以後の書き込みも即座に止まる。a.guiConfig は
+		// SaveGUIConfig が a.mu 下で差し替えるので、読みも a.mu で保護する。
+		enabled: func() bool {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			return a.guiConfig.TranscriptCacheEnabled()
+		},
 	}
 }
 
