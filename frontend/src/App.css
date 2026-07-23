@@ -41,6 +41,19 @@
   overflow: hidden;
 }
 
+/* 視覚的には隠すがスクリーンリーダーには読ませる（table captionなど） */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* グローバル Error Boundary: #app ごと吹き飛ぶ白画面の代わりに全面表示する */
 .error-boundary {
   display: flex;
@@ -320,7 +333,7 @@
   margin-bottom: 4px;
 }
 
-/* ターンの役割ラベル・providerチップ・decided開示トグルを横に並べる行 */
+/* ターンの役割ラベル・providerチップを横に並べる行 */
 .chat-turn-header {
   display: flex;
   align-items: center;
@@ -333,32 +346,37 @@
 }
 
 /* provider名: 誰が答えたかの恒常表示（本体turn.startedから既に届いている値 —
-   表示コストはゼロなので常に出す） */
+   表示コストはゼロなので常に出す）。border-colorはtext-muted-aa相当まで
+   持ち上げる — border-subtleは.chat-message--tomoの地(bg-raised)との実測が
+   1.09:1しかなく、チップの境界として見えていなかった。非text用途でも
+   text系トークンを流用するのは.chat-turn-thinkingのdotと同じ姿勢。 */
 .chat-turn-provider-chip {
   font-size: 11px;
   color: var(--color-text-muted);
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-text-muted-aa);
 }
 
-/* 「なぜこのProviderか」開示トグル(本体 ADR-0040 Decision 2: 既定は畳む) */
-.chat-turn-decided-toggle {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--color-text-muted);
-  background: none;
-  border: none;
+/* 「なぜこのProviderか」開示(本体 ADR-0040 Decision 2: 既定は畳む)。
+   chat-turn-tool-resultと同じネイティブdetails/summary方式。 */
+.chat-turn-decided {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.chat-turn-decided > summary {
   cursor: pointer;
-  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
-.chat-turn-decided-toggle:hover {
+.chat-turn-decided > summary:hover {
   color: var(--color-text-secondary);
 }
 
 .chat-decided-disclosure {
-  margin-bottom: 8px;
+  margin-top: 6px;
 }
 
 .chat-decided-fallback-note {
@@ -368,6 +386,7 @@
 }
 
 .chat-decided-table {
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
@@ -392,8 +411,44 @@
   color: var(--color-text-secondary);
 }
 
+/* Provider/分位点/ゲート/勝ち数は短い定型値 — 折り返すと見出しが読めなくなる
+   のでnowrapで固定幅の列に収める（スコープ列の残り幅は下のellipsis参照） */
+.chat-decided-col-provider {
+  width: 24%;
+  white-space: nowrap;
+}
+
+.chat-decided-col-quantile,
+.chat-decided-col-wins {
+  width: 14%;
+  white-space: nowrap;
+}
+
+.chat-decided-col-gate {
+  width: 12%;
+  white-space: nowrap;
+}
+
+/* スコープは任意長の値が入る — 折り返して他列を崩す代わりに省略し、
+   全文はtitle属性のツールチップに委ねる */
+.chat-decided-cell-scope {
+  max-width: 0; /* table-layout:fixedの列幅(colgroup)を優先し、内容側の意図しない拡張を防ぐ */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 全候補✗の中で採用行だけ太字白色にすると「勝った」ように誤読される
+   （本体はゲート不合格の中から最も悲観の浅い候補を選んでいるだけ）。
+   fallback時はwarning系トークンに変え、勝敗色と混同させない。判別は
+   色だけに頼らずセル文言の「（採用）」も常時添える。 */
 .chat-decided-row--chosen td {
   color: var(--color-text-bright);
+  font-weight: 600;
+}
+
+.chat-decided-row--chosen-fallback td {
+  color: var(--color-warning-bright);
   font-weight: 600;
 }
 

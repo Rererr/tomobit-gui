@@ -22,42 +22,64 @@ function formatWins(wins: number): string {
 }
 
 // 「なぜこのProviderか」の監査行（本体 ADR-0040 Decision 1 の candidates）。
-// 既定は畳む(Decision 2) — この表はトグルを開いた時にしか描画しない。
+// 既定は畳む(Decision 2) — この表は詳細を開いた時にしか描画しない。
 function DecidedDisclosure({ decided }: { decided: DecidedEvent }) {
   return (
     <div className="chat-decided-disclosure">
       {decided.fallback && (
         <p className="chat-decided-fallback-note">
-          全候補がゲートを下回り、最も悲観の浅い候補を選んだ
+          どの候補も基準に届かなかったため、その中で最も見込みのある候補を選んだ
         </p>
       )}
       <table className="chat-decided-table">
+        <caption className="sr-only">判断の監査行: 候補ごとの分位点・ゲート判定・勝ち数</caption>
+        <colgroup>
+          <col className="chat-decided-col-provider" />
+          <col className="chat-decided-col-scope" />
+          <col className="chat-decided-col-quantile" />
+          <col className="chat-decided-col-gate" />
+          <col className="chat-decided-col-wins" />
+        </colgroup>
         <thead>
           <tr>
-            <th>Provider</th>
-            <th>スコープ</th>
-            <th>分位点</th>
-            <th>ゲート</th>
-            <th>勝ち数</th>
+            <th scope="col" className="chat-decided-col-provider">
+              Provider
+            </th>
+            <th scope="col">スコープ</th>
+            <th scope="col" className="chat-decided-col-quantile">
+              分位点
+            </th>
+            <th scope="col" className="chat-decided-col-gate">
+              ゲート
+            </th>
+            <th scope="col" className="chat-decided-col-wins">
+              勝ち数
+            </th>
           </tr>
         </thead>
         <tbody>
-          {decided.candidates.map((candidate, i) => (
-            <tr
-              key={i}
-              className={
-                candidate.provider === decided.provider
-                  ? "chat-decided-row chat-decided-row--chosen"
-                  : "chat-decided-row"
-              }
-            >
-              <td>{candidate.provider}</td>
-              <td>{candidate.scope}</td>
-              <td>{candidate.quantile.toFixed(2)}</td>
-              <td>{candidate.passed ? "✓" : "✗"}</td>
-              <td>{formatWins(candidate.wins)}</td>
-            </tr>
-          ))}
+          {decided.candidates.map((candidate, i) => {
+            const isChosen = candidate.provider === decided.provider;
+            const rowClassName = isChosen
+              ? decided.fallback
+                ? "chat-decided-row chat-decided-row--chosen-fallback"
+                : "chat-decided-row chat-decided-row--chosen"
+              : "chat-decided-row";
+            return (
+              <tr key={i} className={rowClassName}>
+                <td className="chat-decided-col-provider">
+                  {candidate.provider}
+                  {isChosen && "（採用）"}
+                </td>
+                <td className="chat-decided-cell-scope" title={candidate.scope}>
+                  {candidate.scope}
+                </td>
+                <td className="chat-decided-col-quantile">{candidate.quantile.toFixed(2)}</td>
+                <td className="chat-decided-col-gate">{candidate.passed ? "✓" : "✗"}</td>
+                <td className="chat-decided-col-wins">{formatWins(candidate.wins)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -97,27 +119,24 @@ function renderBlock(block: TurnBlock, key: number) {
 }
 
 // decided（本体 ADR-0040）を持つターンだけ開示トグルを持つ。無いタスク
-// （旧本体・do 経由）ではトグル自体を出さない — 劣化は沈黙。
+// （旧本体・do 経由）ではトグル自体を出さない — 劣化は沈黙。トグルは
+// chat-turn-tool-result と同じネイティブ details/summary（開閉状態・
+// キーボード操作をブラウザに委譲する）。ヘッダのflex行には入れず兄弟の
+// ブロックとして置く — flex行の中で開くと他の子(role/chip)がテーブルの
+// 高さ分だけ縦中央に押し流されるため。
 function TurnCard({ message }: { message: TurnMessage }) {
-  const [decidedOpen, setDecidedOpen] = useState(false);
-
   return (
     <div className="chat-message chat-message--tomo">
       <div className="chat-turn-header">
         <span className="chat-message-role">Tomo</span>
         {message.provider !== "" && <span className="chat-turn-provider-chip">{message.provider}</span>}
-        {message.decided !== undefined && (
-          <button
-            type="button"
-            className="chat-turn-decided-toggle"
-            aria-expanded={decidedOpen}
-            onClick={() => setDecidedOpen((v) => !v)}
-          >
-            なぜこのProviderか {decidedOpen ? "▲" : "▼"}
-          </button>
-        )}
       </div>
-      {message.decided !== undefined && decidedOpen && <DecidedDisclosure decided={message.decided} />}
+      {message.decided !== undefined && (
+        <details className="chat-turn-decided">
+          <summary>なぜこのProviderか</summary>
+          <DecidedDisclosure decided={message.decided} />
+        </details>
+      )}
       {message.blocks.length === 0 && message.finished === undefined ? (
         // turn.started は届いたが最初のブロックがまだ無い間の空白。無反応に
         // 見えないよう、考え中であることだけ示す（内容は先取りしない）。
