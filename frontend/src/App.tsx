@@ -8,8 +8,8 @@ import { SessionPane } from "./components/SessionPane";
 import { EndTask, GetSessions, GetTomoStatus, SendLine } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { main } from "../wailsjs/go/models";
-import type { ChatMessage, PaneId, StreamChannel, TurnBlock } from "./types";
-import { asNumber, asString, isViewEvent } from "./types";
+import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from "./types";
+import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
 
 let nextMessageId = 0;
@@ -61,6 +61,13 @@ function App() {
   // text/tool/tool_result/error はこの id のターンへ追記する（購読は一度きりなので
   // ref で最新の開き枠を追う）。
   const openTurnIdRef = useRef<string | null>(null);
+  // decided（本体 ADR-0040）は自分の task.started より先に届きうるので、
+  // sid が一致するまで一時的に持つ（"最も直近の decided" を仮採用し、
+  // sid 不一致なら黙って捨てる — 記帳とGUIの相関はsidだけが正）。
+  const pendingDecidedRef = useRef<DecidedEvent | null>(null);
+  // task.started で sid が一致した decided。同一タスク内で開く turn 全てに
+  // 付与する（GUIは1プロセス1タスクなので次の decided が来るまで有効）。
+  const activeDecidedRef = useRef<DecidedEvent | null>(null);
 
   function setBoundary(v: boolean) {
     boundaryRef.current = v;
@@ -173,7 +180,24 @@ function App() {
         openTurnIdRef.current = id;
         const n = asNumber(ev.n) ?? 0;
         const provider = asString(ev.provider) ?? "";
-        setMessages((prev) => [...prev, { id, kind: "turn", n, provider, blocks: [] }]);
+        const decided = activeDecidedRef.current ?? undefined;
+        setMessages((prev) => [...prev, { id, kind: "turn", n, provider, blocks: [], decided }]);
+        break;
+      }
+      case "task.started": {
+        // decided は自分より先に届いているはずなので、sidが一致する分だけ
+        // このタスクの監査行として採用する（本体 ADR-0040 Decision 1）。
+        const sid = asString(ev.sid);
+        activeDecidedRef.current =
+          sid !== undefined && pendingDecidedRef.current?.sid === sid ? pendingDecidedRef.current : null;
+        pendingDecidedRef.current = null;
+        break;
+      }
+      case "decided": {
+        const decided = asDecidedEvent(ev);
+        if (decided !== undefined) {
+          pendingDecidedRef.current = decided;
+        }
         break;
       }
       case "text": {
@@ -240,6 +264,9 @@ function App() {
         // 境界の器官が済んだので空送信の許可も閉じる — /exit を経ないセッション
         // 境界（手打ちの /new）で「まだ言えない」ボタンが残留しないように。
         setBoundary(false);
+        // 済んだタスクの decided を次のタスクへ持ち越さない（次に decided が
+        // 来ない旧本体・do 経由の場合に古い監査行が誤って表示されるのを防ぐ）。
+        activeDecidedRef.current = null;
         void refreshLedgerViews();
         break;
       }
