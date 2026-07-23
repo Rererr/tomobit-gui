@@ -780,6 +780,74 @@
   line-height: 1.6;
 }
 
+.memory-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.memory-filter-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.memory-filter-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-input);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.memory-filter-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.memory-filter-clear-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memory-filter-clear-btn:hover {
+  background-color: var(--color-bg-raised);
+}
+
+.memory-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.memory-filter-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memory-filter-chip:hover {
+  background-color: var(--color-bg-raised);
+}
+
+.memory-filter-chip--active {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
+}
+
 .memory-section {
   margin-top: 20px;
 }
@@ -788,6 +856,19 @@
   margin: 0 0 8px;
   font-size: 14px;
   color: var(--color-text-secondary);
+}
+
+.memory-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.memory-section-count {
+  font-size: 12px;
+  color: var(--color-text-muted-aa);
+  white-space: nowrap;
 }
 
 .memory-section-empty {
