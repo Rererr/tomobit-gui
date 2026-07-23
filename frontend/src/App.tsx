@@ -72,16 +72,24 @@ function App() {
   // 動きうる瞬間）だけ: ポーリングはしない（低負荷、ADR-0001 Decision 3 と
   // 同じ「開くたびに読む」姿勢）。
   async function refreshLedgerViews() {
-    try {
-      const [status, list] = await Promise.all([GetTomoStatus(), GetSessions()]);
-      setTomoStatus(status);
-      setSessions(list.sessions);
-      setSessionsError(null);
-    } catch (err) {
-      setSessionsError(errorMessage(err));
-    } finally {
-      setSessionsLoading(false);
+    // allSettled で独立に受ける: ヘッダ(サブプロセス呼び出し — 旧本体や
+    // バイナリ不在で失敗しうる)の失敗は素の「Tomo」への局所的劣化に留め
+    // (本体 ADR-0039 Decision 3)、セッション一覧のエラー欄に無関係な
+    // 文言を混ぜない。診断は stderr 面へ流す。
+    const [status, list] = await Promise.allSettled([GetTomoStatus(), GetSessions()]);
+    if (status.status === "fulfilled") {
+      setTomoStatus(status.value);
+    } else {
+      setTomoStatus(null);
+      appendStderr(`ヘッダの取得に失敗: ${errorMessage(status.reason)}\n`);
     }
+    if (list.status === "fulfilled") {
+      setSessions(list.value.sessions);
+      setSessionsError(null);
+    } else {
+      setSessionsError(errorMessage(list.reason));
+    }
+    setSessionsLoading(false);
   }
 
   useEffect(() => {

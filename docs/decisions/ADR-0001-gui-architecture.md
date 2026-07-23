@@ -164,6 +164,24 @@ Decision 3 で解消された。TTYゲートが「env 沈黙時の既定」に�
 既に `TOMOBIT_FACE` を明示していれば触らない（ユーザーの `=0` を GUI が黙って覆すのは
 env>config の序列に反する。`chat.go` composeChatEnv）。
 
+### 追記（2026-07-24・「GUI設定でOFF可」の実装時判断）
+
+顔窓トグルは `gui.json` の `face_enabled` に持つ。**未設定=ON**（現行挙動の維持）と
+明示OFFを区別するため tri-state（`*bool`）。OFF の表現は `TOMOBIT_FACE=0` を
+書くのではなく**沈黙** — 本体 ADR-0032 Decision 3 の「env 沈黙時の既定は
+TTYゲート」に委ねる（pipe では沈黙=開かない）。親環境が `TOMOBIT_FACE` を
+明示していれば GUI 設定より優先される（env>config の序列は上の追記と同じ）。
+
+### 追記（2026-07-24・本体 ADR-0039 の採用によるステージ導出の返上）
+
+「テキストのViewは導出してよい」の但し書きで持っていたステージ導出の移植
+（stage.go 約570行 — 本体の Beta 数学・較正ノブの複製）は、本体
+[ADR-0039](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0039-status-machine-view.md)
+の `tomobit status --view json` に置き換えた。ヘッダの真実は台帳を書く
+バイナリ自身が導出し、GUIは器官の口（Decision 3 と同じサブプロセス型）で
+読むだけになる — 較正ノブへの追随義務と opt-in 照合テストは役目を終えた。
+旧本体（`--view` を知らない版）ではヘッダ取得が失敗し、素の「Tomo」表示に落ちる。
+
 ---
 
 ## Consequences

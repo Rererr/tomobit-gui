@@ -42,13 +42,15 @@
   対人の信号が `--view ndjson` になり、両器官も `{"type":"note",...,"await":true}` として届く。
   **GUI 側の配線変更は不要** — Feedback の質問を既に同じ形で受けている
 
-## 本体側の設計待ち（GUI単独では進められない）
+## 本体 ADR-0039 で解決（2026-07-24）
 
-- **ステージ導出式の共有**: Tomo名ヘッダ（2026-07-19 実装）は本体
-  `internal/face/stage.go` とその依存の移植（tomobit d4e2412 時点、`stage.go`）で
-  導出している。本体の較正ノブ・式の変更には追随が要る（ドリフト検知は
-  `stage_test.go` の opt-in 照合テストによる手動確認のみ）。恒久解
-  （本体の公開API化 or viewストリームへの stage 掲載）は本体側ADRの論点
+- **ステージ導出式の共有** → 本体
+  [ADR-0039](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0039-status-machine-view.md)
+  （相棒ビューの機械可読view）。`tomobit status --view json` が stage/mood/speak を
+  1オブジェクトで返し、GUI は移植570行を捨ててサブプロセスで読む
+  （ADR-0001 Decision 5 の追記を参照）。較正ノブの追随義務・照合テストは消滅。
+  **前提**: 本体はADR-0039実装済みの版（2026-07-24以降）が必要。旧本体では
+  ヘッダが素の「Tomo」に落ちる（機能degrade、クラッシュはしない）
 
 GUI側の未実装 3件（Tomo名ヘッダ / セッション一覧のダイジェスト要約 /
 connections の Provider 単位集約）は 2026-07-19 に実装済み。

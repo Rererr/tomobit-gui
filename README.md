@@ -29,6 +29,9 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
    go install ./cmd/tomobit        # → ~/go/bin/tomobit
    ```
 
+   本体は ADR-0039（`status --view json`、2026-07-24）実装済みの版であること。
+   旧本体でも動くが、ヘッダのステージ表示が素の「Tomo」に落ちる。
+
    会話には Provider（既定 claude-code = `claude` CLI）が要る。区切り時の知覚は
    本体の知覚バックエンド（MLX LMサーバー）が担うが、止まっていても会話はでき、
    知覚は pending に積まれて後から `tomobit perceive` で消化できる。

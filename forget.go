@@ -16,10 +16,12 @@ import (
 	"time"
 )
 
-// forgetTimeout bounds one CLI run. forget/amend は同一コマンド内で
-// rebuild+VACUUM まで走る (ADR-0033) ので数秒のオーダーだが、ロック競合等で
-// 固まったときにUIを道連れにしない上限。
-const forgetTimeout = 2 * time.Minute
+// tomobitCmdTimeout bounds one CLI run (forget/amend/status 共通)。forget/amend
+// は同一コマンド内で rebuild+VACUUM まで走る (ADR-0033) ので数秒のオーダー。
+// status --view json は純読み取りで本来ずっと速いが、上限は read/write で
+// 分けず器官呼び出し全体の安全弁として一本化する — ロック競合等で固まった
+// ときにUIを道連れにしないための天井であって、所要時間の見積もりではない。
+const tomobitCmdTimeout = 2 * time.Minute
 
 // runTomobit runs one body verb to completion and returns both streams.
 // A package var, not a method, so tests can swap in a capture without a
@@ -31,7 +33,7 @@ func runTomobitSubprocess(args ...string) (stdout, stderr string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), forgetTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), tomobitCmdTimeout)
 	defer cancel()
 	// 環境は素通し (chat.go と同じ姿勢): TOMOBIT_DB 等の env オーバーライドが
 	// 読み (dbPath) と書き (CLI) で同じ台帳を指す。
@@ -40,7 +42,7 @@ func runTomobitSubprocess(args ...string) (stdout, stderr string, err error) {
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
 	err = cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		err = fmt.Errorf("tomobit %s が %s 以内に終わらない", args[0], forgetTimeout)
+		err = fmt.Errorf("tomobit %s が %s 以内に終わらない", args[0], tomobitCmdTimeout)
 	}
 	return outBuf.String(), errBuf.String(), err
 }
