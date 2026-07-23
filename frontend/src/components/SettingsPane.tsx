@@ -5,9 +5,17 @@ import { errorMessage } from "../errorMessage";
 type SaveState = { kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string };
 type LoadState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string };
 
+// 未設定（キー無しJSON）は ON — GUIConfig.FaceWindowEnabled の既定と揃える
+// （Go側: guiconfig.go）。
+function faceWindowEnabled(faceEnabled?: boolean): boolean {
+  return faceEnabled !== false;
+}
+
 export function SettingsPane() {
   const [speakingStyle, setSpeakingStyle] = useState("");
   const [savedStyle, setSavedStyle] = useState<string | null>(null);
+  const [faceEnabled, setFaceEnabled] = useState(true);
+  const [savedFaceEnabled, setSavedFaceEnabled] = useState<boolean | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
 
@@ -17,6 +25,9 @@ export function SettingsPane() {
       const config = await GetGUIConfig();
       setSpeakingStyle(config.speaking_style);
       setSavedStyle(config.speaking_style);
+      const enabled = faceWindowEnabled(config.face_enabled);
+      setFaceEnabled(enabled);
+      setSavedFaceEnabled(enabled);
       setLoadState({ kind: "ready" });
     } catch (err) {
       setLoadState({
@@ -32,8 +43,9 @@ export function SettingsPane() {
 
   async function handleSave() {
     try {
-      await SaveGUIConfig({ speaking_style: speakingStyle });
+      await SaveGUIConfig({ speaking_style: speakingStyle, face_enabled: faceEnabled });
       setSavedStyle(speakingStyle);
+      setSavedFaceEnabled(faceEnabled);
       setSaveState({ kind: "saved" });
     } catch (err) {
       setSaveState({
@@ -43,7 +55,9 @@ export function SettingsPane() {
     }
   }
 
-  const dirty = savedStyle !== null && speakingStyle !== savedStyle;
+  const dirty =
+    (savedStyle !== null && speakingStyle !== savedStyle) ||
+    (savedFaceEnabled !== null && faceEnabled !== savedFaceEnabled);
 
   return (
     <div className="settings-pane">
@@ -66,6 +80,20 @@ export function SettingsPane() {
       <p className="settings-note">
         システムプロンプトに追記される — 会話の台帳（記録）には載らない
       </p>
+
+      <label className="settings-checkbox-field">
+        <input
+          type="checkbox"
+          checked={faceEnabled}
+          onChange={(event) => {
+            setFaceEnabled(event.target.checked);
+            setSaveState({ kind: "idle" });
+          }}
+          disabled={loadState.kind !== "ready"}
+        />
+        <span>顔窓を開く</span>
+      </label>
+      <p className="settings-note">次のチャット（New chatで区切った後）から反映される</p>
 
       {loadState.kind === "loading" && <p className="settings-status">読み込み中…</p>}
       {loadState.kind === "error" && (

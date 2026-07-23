@@ -15,6 +15,19 @@ import (
 // GUIConfig is ~/.tomobit/gui.json's whole shape.
 type GUIConfig struct {
 	SpeakingStyle string `json:"speaking_style"`
+
+	// FaceEnabled は顔窓トグル (ADR-0001 Decision 5)。ポインタで「キー無し」と
+	// 「明示 false」を区別する: 既存の gui.json にはまだキーが無く、それは
+	// 現行挙動（ON）のまま読める必要がある。plain bool では両者が区別できず
+	// 後方互換が壊れる。
+	FaceEnabled *bool `json:"face_enabled,omitempty"`
+}
+
+// FaceWindowEnabled resolves the tri-state (unset/ON/explicit OFF) to the
+// bool composeChatEnv needs. Unset means ON — 既存の gui.json にキーが無くて
+// も顔窓が黙って閉じない後方互換。
+func (c GUIConfig) FaceWindowEnabled() bool {
+	return c.FaceEnabled == nil || *c.FaceEnabled
 }
 
 func guiConfigPath() (string, error) {

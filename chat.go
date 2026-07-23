@@ -151,20 +151,24 @@ func composeClaudeArgsAppend(existing, speakingStyle string) string {
 	return existing + " " + arg
 }
 
-// composeChatEnv builds the child chat process's environment (ADR-0001 Decision
-// 4 / 本体 ADR-0032 Decision 3). base は親環境の素通し（TOMOBIT_DB などの本体の
-// env オーバーライドをそのまま効かせる）。喋り方の注入と顔窓のオプトインは互いに
-// 独立で、両方該当すれば直積で両方積まれる。
+// composeChatEnv builds the child chat process's environment (ADR-0001
+// Decision 4/5 / 本体 ADR-0032 Decision 3). base は親環境の素通し（TOMOBIT_DB
+// などの本体の env オーバーライドをそのまま効かせる）。喋り方の注入と顔窓の
+// オプトインは互いに独立で、両方該当すれば直積で両方積まれる。
 //
 // faceSet が真（親が TOMOBIT_FACE を明示している）なら顔窓の env には触らない —
 // ユーザーの明示した =0 を GUI が黙って =1 で覆すのは env>config の序列に反する。
-// 沈黙時だけ =1 を立てて「この pipe の先に人が居る」と宣言する（ADR-0032 Decision 3）。
-func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingAppend string) []string {
+// faceSet が偽のときだけ GUI 設定 faceEnabled（既定 ON）を見る: ON なら
+// 「この pipe の先に人が居る」と=1を立て（ADR-0032 Decision 3）、GUI設定で
+// OFF にした場合は何も書かず沈黙のままにする — 本体の「env沈黙時の既定は
+// TTYゲート」により pipe 起動では沈黙=開かないので、OFFの意思は `=0` を書く
+// のでなく黙ることで表す。
+func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingAppend string, faceEnabled bool) []string {
 	env := base
 	if style := strings.TrimSpace(speakingStyle); style != "" {
 		env = append(env, "TOMOBIT_CLAUDE_ARGS_APPEND="+composeClaudeArgsAppend(existingAppend, style))
 	}
-	if !faceSet {
+	if !faceSet && faceEnabled {
 		env = append(env, "TOMOBIT_FACE=1")
 	}
 	return env
@@ -206,7 +210,7 @@ func (a *App) ensureProcLocked() error {
 	// が、それは env を手で壊した場合だけ — GUI 自身の合成出力は常に整形式）。
 	_, faceSet := os.LookupEnv("TOMOBIT_FACE")
 	existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
-	cmd.Env = composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing)
+	cmd.Env = composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing, a.guiConfig.FaceWindowEnabled())
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)

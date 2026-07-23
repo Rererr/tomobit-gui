@@ -41,6 +41,48 @@
   overflow: hidden;
 }
 
+/* グローバル Error Boundary: #app ごと吹き飛ぶ白画面の代わりに全面表示する */
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100vh;
+  background-color: var(--color-bg-app);
+  color: var(--color-text);
+  text-align: center;
+  padding: 24px;
+}
+
+.error-boundary h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.error-boundary-message {
+  margin: 0;
+  max-width: 480px;
+  color: var(--color-warning);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.error-boundary-reload-btn {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.error-boundary-reload-btn:hover {
+  background-color: var(--color-accent-hover);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -633,6 +675,16 @@
   margin: 8px 0 0;
   color: var(--color-text-muted-aa);
   font-size: 12px;
+}
+
+.settings-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
 }
 
 .settings-actions {

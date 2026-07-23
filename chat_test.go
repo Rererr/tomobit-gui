@@ -61,26 +61,42 @@ func TestComposeChatEnv_顔窓オプトインと喋り方を積む(t *testing.T)
 		}
 		return false
 	}
-
-	// TOMOBIT_FACE 未設定 → =1 が付く（この pipe の先に人が居る宣言）。
-	if env := composeChatEnv([]string{"PATH=/usr/bin"}, "", false, ""); !has(env, "TOMOBIT_FACE=1") {
-		t.Errorf("未設定なのに TOMOBIT_FACE=1 が立たない: %v", env)
+	hasKey := func(env []string, key string) bool {
+		for _, e := range env {
+			if strings.HasPrefix(e, key+"=") {
+				return true
+			}
+		}
+		return false
 	}
 
-	// 既設定（0 でも 1 でも）は触らない — ユーザーの明示を GUI が覆さない。
+	// TOMOBIT_FACE 未設定 + GUI設定ON（既定） → =1 が付く（この pipe の先に人が居る宣言）。
+	if env := composeChatEnv([]string{"PATH=/usr/bin"}, "", false, "", true); !has(env, "TOMOBIT_FACE=1") {
+		t.Errorf("未設定・ON なのに TOMOBIT_FACE=1 が立たない: %v", env)
+	}
+
+	// 既設定（0 でも 1 でも）は GUI設定に関わらず触らない — ユーザーの明示を GUI が覆さない。
 	for _, val := range []string{"0", "1"} {
-		base := []string{"PATH=/usr/bin", "TOMOBIT_FACE=" + val}
-		env := composeChatEnv(base, "", true, "")
-		if !has(env, "TOMOBIT_FACE="+val) {
-			t.Errorf("既設定 =%s が消えた: %v", val, env)
+		for _, faceEnabled := range []bool{true, false} {
+			base := []string{"PATH=/usr/bin", "TOMOBIT_FACE=" + val}
+			env := composeChatEnv(base, "", true, "", faceEnabled)
+			if !has(env, "TOMOBIT_FACE="+val) {
+				t.Errorf("既設定 =%s（faceEnabled=%v） が消えた: %v", val, faceEnabled, env)
+			}
+			if val == "0" && has(env, "TOMOBIT_FACE=1") {
+				t.Errorf("既設定 =0（faceEnabled=%v） を GUI が =1 で上書きした: %v", faceEnabled, env)
+			}
 		}
-		if val == "0" && has(env, "TOMOBIT_FACE=1") {
-			t.Errorf("既設定 =0 を GUI が =1 で上書きした: %v", env)
-		}
+	}
+
+	// TOMOBIT_FACE 未設定 + GUI設定OFF → 何も書かない沈黙のまま
+	// （`=0` は書かない — pipe では沈黙=開かないため、OFFの意思は沈黙で表す）。
+	if env := composeChatEnv([]string{"PATH=/usr/bin"}, "", false, "", false); hasKey(env, "TOMOBIT_FACE") {
+		t.Errorf("未設定・OFF なのに TOMOBIT_FACE が書かれた: %v", env)
 	}
 
 	// 喋り方併用時は喋り方の注入と顔窓オプトインが両方入る（直積）。
-	env := composeChatEnv([]string{"PATH=/usr/bin"}, "関西弁で", false, "")
+	env := composeChatEnv([]string{"PATH=/usr/bin"}, "関西弁で", false, "", true)
 	if !has(env, `TOMOBIT_CLAUDE_ARGS_APPEND=--append-system-prompt "関西弁で"`) {
 		t.Errorf("喋り方が注入されない: %v", env)
 	}

@@ -114,6 +114,7 @@ export namespace main {
 	}
 	export class GUIConfig {
 	    speaking_style: string;
+	    face_enabled?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIConfig(source);
@@ -122,6 +123,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.speaking_style = source["speaking_style"];
+	        this.face_enabled = source["face_enabled"];
 	    }
 	}
 	export class MemoryView {
