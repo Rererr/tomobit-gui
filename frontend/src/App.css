@@ -218,11 +218,27 @@
 /* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView */
 .main-header {
   flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
   padding: 10px 24px;
   border-bottom: 1px solid var(--color-bg-raised);
   color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 600;
+}
+
+/* voice.Suggest の一言(本体ADR-0039)。黙っていれば要素ごと出さない —
+   ヘッダ自体が相棒のpresenceを担うので、無音を埋め草で埋めない */
+.main-header-speak {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-muted-aa);
+  font-weight: 400;
 }
 
 .chat-pane {

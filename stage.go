@@ -12,12 +12,22 @@ import (
 
 // TomoStatus is the header's View. Exists follows MemoryView's semantics:
 // false means the ledger has never been created (the header shows a bare
-// "Tomo" — 台帳が無いのに毛玉が居るとは言わない). mood/speak 等、本体viewの
-// 他フィールドは前方互換契約(本体ADR-0032 Decision 1)によりデコード時に無視する。
+// "Tomo" — 台帳が無いのに毛玉が居るとは言わない). Mood/Speak は本体
+// voice.Suggest が黙れば省略されるフィールド(本体ADR-0039 Decision 1)なので
+// ポインタ/ゼロ値許容とし、旧本体(このviewを知らない版)のデコードでも
+// 前方互換契約(本体ADR-0032 Decision 1)を保つ。
 type TomoStatus struct {
 	Exists    bool   `json:"exists"`
 	Stage     int    `json:"stage"`
 	StageName string `json:"stage_name"`
+	Mood      *Mood  `json:"mood,omitempty"`
+	Speak     string `json:"speak,omitempty"`
+}
+
+// Mood is voice.Suggest の記号 — Marker は「!」「?」「z」等1文字で空文字もありうる。
+type Mood struct {
+	Name   string `json:"name"`
+	Marker string `json:"marker"`
 }
 
 // GetTomoStatus asks the body for its own view of the ledger — the same

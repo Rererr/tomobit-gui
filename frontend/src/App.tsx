@@ -346,8 +346,16 @@ function App() {
       <main className="main-pane">
         {/* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView。
             台帳がまだ無ければステージは名乗らない */}
-        <header className="main-header" title="成長ステージ — 台帳からの導出View（顔窓と同じ式）">
-          {tomoStatus !== null && tomoStatus.exists ? `Tomo · ${tomoStatus.stage_name}` : "Tomo"}
+        <header className="main-header">
+          <span title="成長ステージ — 台帳からの導出View（顔窓と同じ式）">
+            {tomoStatus !== null && tomoStatus.exists ? `Tomo · ${tomoStatus.stage_name}` : "Tomo"}
+            {tomoStatus?.mood?.marker ? ` ${tomoStatus.mood.marker}` : ""}
+          </span>
+          {tomoStatus?.speak ? (
+            <span className="main-header-speak" title={tomoStatus.speak}>
+              「{tomoStatus.speak}」
+            </span>
+          ) : null}
         </header>
         {/* チャットと設定はアンマウントせず隠すだけ: 入力途中の下書き・未保存の
             喋り方編集がペイン切替で消えるのを防ぐ（実機レビューで確認された

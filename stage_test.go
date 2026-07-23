@@ -32,6 +32,47 @@ func TestGetTomoStatus_台帳ありは本体viewのstageをそのままデコー
 	}
 }
 
+func TestGetTomoStatus_speak欠落は空文字にデコードされる(t *testing.T) {
+	// voice.Suggest が黙るとフィールドごと欠落する(本体ADR-0039 Decision 1)。
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":4,"stage_name":"おとな","mood":{"name":"ふつう","marker":""}}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Speak != "" {
+		t.Errorf("status.Speak = %q, want 空文字", status.Speak)
+	}
+	if status.Mood == nil || status.Mood.Marker != "" {
+		t.Errorf("status.Mood = %+v, want marker 空文字のMood", status.Mood)
+	}
+}
+
+func TestGetTomoStatus_moodのmarker空文字はそのままデコードされる(t *testing.T) {
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":1,"stage_name":"あかご","mood":{"name":"ふつう","marker":""},"speak":"やあ"}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Mood == nil || status.Mood.Name != "ふつう" || status.Mood.Marker != "" {
+		t.Errorf("status.Mood = %+v, want {ふつう }", status.Mood)
+	}
+}
+
+func TestGetTomoStatus_旧本体形式はmood無しspeak無しでもデコードできる(t *testing.T) {
+	// mood/speak を知らない旧本体(本体ADR-0039以前)の出力を模す。
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":2,"stage_name":"こども"}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Mood != nil {
+		t.Errorf("status.Mood = %+v, want nil", status.Mood)
+	}
+	if status.Speak != "" {
+		t.Errorf("status.Speak = %q, want 空文字", status.Speak)
+	}
+}
+
 func TestGetTomoStatus_台帳なしはExistsFalseのゼロ値(t *testing.T) {
 	withFakeTomobit(t, `echo '{"type":"status","exists":false}'`)
 	status, err := NewApp().GetTomoStatus()
