@@ -133,7 +133,9 @@ export function MemoryPane() {
   const [action, setAction] = useState<RowAction | null>(null);
   const [writeStatus, setWriteStatus] = useState<{ ok: boolean; text: string } | null>(null);
   // 検索・kind絞り込みはViewの一時的な操作 — 台帳を書き換えないため永続化しない
-  // （ペインを離れて再訪すれば白紙に戻る。設定ではなく視線の絞り方）
+  // （ペインを離れて再訪すれば白紙に戻る。設定ではなく視線の絞り方）。
+  // 離れたら破棄=アンマウント粒度は意図（検索は一時的な視線）。タブ往復での
+  // 保持が欲しくなったらApp側へ一段引き上げる。
   const [searchText, setSearchText] = useState("");
   const [selectedKinds, setSelectedKinds] = useState<Set<string>>(new Set());
   // 行内フォームを開く「訂正」/「忘れる」ボタン（行id + 種別で引ける）。開いた
@@ -297,6 +299,22 @@ export function MemoryPane() {
           (c) => searchText === "" || includesCI(curiositySearchText(c), searchText),
         );
         const filterActive = searchText !== "" || selectedKinds.size > 0;
+        // 表示行はtarget集約グループが単位なので、件数もグループ数で揃える
+        // （生connections数だと同じtargetの複数scopeが水増しされて行数と食い違う）
+        const connGroups = groupConnections(filteredConnections);
+        const totalConnGroups = groupConnections(state.view.connections).length;
+        // 絞り込み無効時・総数0件時は「何/何件」が常時同じ値を繰り返すだけの
+        // ノイズになる — 絞り込み中にこそ意味を持つので、その時だけ出す
+        const connCountLabel =
+          filterActive && totalConnGroups > 0 ? sectionCount(connGroups.length, totalConnGroups) : null;
+        const expCountLabel =
+          filterActive && state.view.experiences.length > 0
+            ? sectionCount(filteredExperiences.length, state.view.experiences.length)
+            : null;
+        const curCountLabel =
+          filterActive && state.view.curiosity.length > 0
+            ? sectionCount(filteredCuriosity.length, state.view.curiosity.length)
+            : null;
 
         return (
         <>
@@ -312,9 +330,19 @@ export function MemoryPane() {
               aria-label="メモリを検索"
               onChange={(e) => setSearchText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Escape" && searchText !== "") {
+                if (e.key !== "Escape") {
+                  return;
+                }
+                if (searchText !== "") {
                   e.stopPropagation();
                   setSearchText("");
+                  return;
+                }
+                // 行内フォーム（訂正/忘れる確認）が開いている間は、検索欄
+                // フォーカス中のEscapeをグローバルリスナーへ貫通させない
+                // — 空振り検索クリアのつもりが破壊的確認を無言で閉じてしまう
+                if (action !== null && action.kind !== "busy") {
+                  e.stopPropagation();
                 }
               }}
             />
@@ -325,43 +353,42 @@ export function MemoryPane() {
             )}
           </div>
 
-          {kindOptions.length > 0 && (
-            <div className="memory-filter-chips" role="group" aria-label="kindで絞り込み">
-              {kindOptions.map((kind) => {
-                const pressed = selectedKinds.has(kind);
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    className={pressed ? "memory-filter-chip memory-filter-chip--active" : "memory-filter-chip"}
-                    aria-pressed={pressed}
-                    onClick={() => toggleKind(kind)}
-                  >
-                    {kind}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           <section className="memory-section">
             <div className="memory-section-header">
               <h3>Tomoの理解</h3>
-              <span className="memory-section-count">
-                {sectionCount(filteredConnections.length, state.view.connections.length)}
-              </span>
+              {connCountLabel !== null && <span className="memory-section-count">{connCountLabel}</span>}
             </div>
+            {/* kind絞り込みはここでしか効かない（積んだ経験・気になっていることは
+                対象外）ので、チップ群はTomoの理解セクションの直下に置いて
+                スコープを構造で示す */}
+            {kindOptions.length > 0 && (
+              <div className="memory-filter-chips" role="group" aria-label="Tomoの理解をkindで絞り込み">
+                {kindOptions.map((kind) => {
+                  const pressed = selectedKinds.has(kind);
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      className={pressed ? "memory-filter-chip memory-filter-chip--active" : "memory-filter-chip"}
+                      aria-pressed={pressed}
+                      onClick={() => toggleKind(kind)}
+                    >
+                      {kind}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {state.view.connections.length === 0 ? (
               <p className="memory-section-empty">まだ何も学んでいない</p>
             ) : filteredConnections.length === 0 ? (
               <p className="memory-section-empty">該当なし</p>
             ) : (
               (() => {
-                const groups = groupConnections(filteredConnections);
                 // グループが少ないうちは畳む理由が無い。増えたら summary の
                 // 集約値だけで見通し、必要な target を開く
-                const open = groups.length <= 2;
-                return groups.map((g) => (
+                const open = connGroups.length <= 2;
+                return connGroups.map((g) => (
                   <details key={`${g.kind}:${g.target}`} className="memory-group" open={open}>
                     <summary className="memory-group-summary">
                       <span className="memory-item-title">
@@ -397,9 +424,7 @@ export function MemoryPane() {
           <section className="memory-section">
             <div className="memory-section-header">
               <h3>積んだ経験</h3>
-              <span className="memory-section-count">
-                {sectionCount(filteredExperiences.length, state.view.experiences.length)}
-              </span>
+              {expCountLabel !== null && <span className="memory-section-count">{expCountLabel}</span>}
             </div>
             {state.view.experiences.length === 0 ? (
               <p className="memory-section-empty">まだ経験が無い</p>
@@ -529,9 +554,7 @@ export function MemoryPane() {
           <section className="memory-section">
             <div className="memory-section-header">
               <h3>気になっていること</h3>
-              <span className="memory-section-count">
-                {sectionCount(filteredCuriosity.length, state.view.curiosity.length)}
-              </span>
+              {curCountLabel !== null && <span className="memory-section-count">{curCountLabel}</span>}
             </div>
             {state.view.curiosity.length === 0 ? (
               <p className="memory-section-empty">今は気になっていることが無い</p>

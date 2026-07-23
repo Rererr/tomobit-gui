@@ -884,6 +884,10 @@
   border-color: var(--color-accent);
 }
 
+.memory-filter-input::placeholder {
+  color: var(--color-text-muted-aa);
+}
+
 .memory-filter-clear-btn {
   padding: 4px 10px;
   border-radius: 6px;
@@ -902,7 +906,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin: 8px 0 12px;
 }
 
 .memory-filter-chip {
@@ -923,6 +927,14 @@
   border-color: var(--color-accent);
   background-color: var(--color-accent);
   color: var(--color-text-bright);
+}
+
+/* --active単体より詳細度を上げて選択状態を優先させる。無指定だと
+   :hoverが--activeの背景色を上書きし、選択中チップにマウスを乗せるだけで
+   raised灰に戻って見えていた（実測） */
+.memory-filter-chip.memory-filter-chip--active:hover {
+  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 .memory-section {
