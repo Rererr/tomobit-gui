@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -102,6 +103,58 @@ func TestComposeChatEnv_顔窓オプトインと喋り方を積む(t *testing.T)
 	}
 	if !has(env, "TOMOBIT_FACE=1") {
 		t.Errorf("喋り方併用で顔窓オプトインが消えた: %v", env)
+	}
+}
+
+func TestChatEnv_App配線がguiConfigとos環境をcomposeChatEnvへ正しく渡す(t *testing.T) {
+	hasKey := func(env []string, key string) bool {
+		for _, e := range env {
+			if strings.HasPrefix(e, key+"=") {
+				return true
+			}
+		}
+		return false
+	}
+	has := func(env []string, kv string) bool {
+		for _, e := range env {
+			if e == kv {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TOMOBIT_FACE 未設定 + guiConfig 明示 OFF → chatEnv() 経由でも沈黙のまま
+	// （ensureProcLocked の cmd.Env 配線一行がここでしか踏まれない — composeChatEnv
+	// 自体のテストは os.Environ()/a.guiConfig を経由しない）。
+	t.Setenv("TOMOBIT_CLAUDE_ARGS_APPEND", "")
+	// t.Setenv は元値の復元を登録するためだけに呼び、直後に消す（face_e2e_test.go と同じ手筋）。
+	if v, ok := os.LookupEnv("TOMOBIT_FACE"); ok {
+		t.Setenv("TOMOBIT_FACE", v)
+		os.Unsetenv("TOMOBIT_FACE")
+	}
+	off := false
+	a := &App{guiConfig: GUIConfig{FaceEnabled: &off}}
+	if env := a.chatEnv(); hasKey(env, "TOMOBIT_FACE") {
+		t.Errorf("guiConfig で OFF なのに TOMOBIT_FACE が書かれた: %v", env)
+	}
+
+	// TOMOBIT_FACE 未設定 + guiConfig 明示 ON + 喋り方あり → 両方 chatEnv() に乗る。
+	on := true
+	a = &App{guiConfig: GUIConfig{SpeakingStyle: "関西弁で", FaceEnabled: &on}}
+	env := a.chatEnv()
+	if !has(env, "TOMOBIT_FACE=1") {
+		t.Errorf("guiConfig で ON なのに TOMOBIT_FACE=1 が chatEnv() に無い: %v", env)
+	}
+	if !has(env, `TOMOBIT_CLAUDE_ARGS_APPEND=--append-system-prompt "関西弁で"`) {
+		t.Errorf("guiConfig の喋り方が chatEnv() に無い: %v", env)
+	}
+
+	// 親プロセスが TOMOBIT_FACE を明示していれば guiConfig の ON/OFF に関わらず触らない。
+	t.Setenv("TOMOBIT_FACE", "0")
+	a = &App{guiConfig: GUIConfig{FaceEnabled: &on}}
+	if env := a.chatEnv(); !has(env, "TOMOBIT_FACE=0") {
+		t.Errorf("親の明示 TOMOBIT_FACE=0 が chatEnv() で消えた: %v", env)
 	}
 }
 

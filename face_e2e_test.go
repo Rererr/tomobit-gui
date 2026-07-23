@@ -50,6 +50,45 @@ func TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる(t 
 		func() bool { return !faceRunning() })
 }
 
+// TOMOBIT_GUI_E2E=1 で有効になる実環境検証: GUI設定で顔窓トグルを明示OFFに
+// した状態で chat を起動しても、pipe に TOMOBIT_FACE=1 が立たず実物の顔窓
+// プロセスが現れないことを見る。composeChatEnv のユニットテスト（env合成の
+// 確認）は実プロセスを立てないため、本体の TTY ゲート越しでも本当に沈黙が
+// 「開かない」に落ちることまでは映らない — だから実プロセス・実窓で見る。
+func TestE2E_顔窓がGUI設定OFFではchat起動で開かない(t *testing.T) {
+	if os.Getenv("TOMOBIT_GUI_E2E") == "" {
+		t.Skip("TOMOBIT_GUI_E2E=1 のときだけ実環境を動かす")
+	}
+	if faceRunning() {
+		t.Skip("顔窓が既に開いている — 本体の facelock が spawn を見送るため死活を判別できない")
+	}
+	db := filepath.Join(t.TempDir(), "e2e.db")
+	t.Setenv("TOMOBIT_DB", db)
+	t.Setenv("TOMOBIT_FACE_RESIDENT", "0")
+	// TOMOBIT_FACE は未設定にする — 被験体は GUI 設定側の OFF であって、親環境の
+	// 明示 OFF ではない（明示 OFF は既存の composeChatEnv ユニットテストが担う）。
+	if v, ok := os.LookupEnv("TOMOBIT_FACE"); ok {
+		t.Setenv("TOMOBIT_FACE", v)
+		os.Unsetenv("TOMOBIT_FACE")
+	}
+
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	off := false
+	app.guiConfig = GUIConfig{FaceEnabled: &off}
+
+	// /exit だけ送ってターンは走らせない（顔窓は chat 起動時に開く／開かないが
+	// 決まる）。
+	if err := app.SendLine("/exit"); err != nil {
+		t.Fatal(err)
+	}
+	// 顔窓が開くとすれば TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる
+	// が 20s 以内の出現を確認している基準に倣い、同じ長さ起きないことを見届ける。
+	assertNever(t, "GUI設定でOFFにしたのに顔窓プロセスが現れた", 20*time.Second, faceRunning)
+
+	app.shutdown(nil)
+}
+
 // faceRunning reports whether a tomobit-face process is on the machine —
 // the same machine-wide granularity as the body's facelock.
 func faceRunning() bool {
@@ -66,4 +105,17 @@ func waitCond(t *testing.T, what string, timeout time.Duration, cond func() bool
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("%s が %s 待っても起きない", what, timeout)
+}
+
+// assertNever holds window open, failing the moment cond becomes true —
+// the negative counterpart of waitCond for "this must not happen" e2e checks.
+func assertNever(t *testing.T, failMsg string, window time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(window)
+	for time.Now().Before(deadline) {
+		if cond() {
+			t.Fatal(failMsg)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }

@@ -190,6 +190,19 @@ func findTomobit(lookPath func(string) (string, error), userHome func() (string,
 	return "", fmt.Errorf("tomobit が見つからない — 本体を `go install ./cmd/tomobit` して PATH か ~/go/bin に置くこと")
 }
 
+// chatEnv is the wiring point between the process environment / a.guiConfig
+// and composeChatEnv's pure合成: composeChatEnv自体のユニットテストは
+// os.Environ()・a.guiConfigの参照を経由しないため、引数の取り違えは
+// ここでしか踏めない。
+func (a *App) chatEnv() []string {
+	// os.Environ() に同キーが残っていても exec.Cmd が重複キーを後勝ちで dedupe する
+	// ので、合成済みの値が子へ届く（既存値が引用符不整合だと合成分がその中に呑まれる
+	// が、それは env を手で壊した場合だけ — GUI 自身の合成出力は常に整形式）。
+	_, faceSet := os.LookupEnv("TOMOBIT_FACE")
+	existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
+	return composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing, a.guiConfig.FaceWindowEnabled())
+}
+
 // ensureProcLocked spawns `tomobit chat --view ndjson` if none is running.
 // Caller holds a.mu. view ストリームで stdout が全量 NDJSON になり、ターン終端が
 // 機械可読になる（本体 ADR-0032 Decision 1）。顔窓のオプトイン（TOMOBIT_FACE=1）は
@@ -205,12 +218,7 @@ func (a *App) ensureProcLocked() error {
 	}
 	cmd := exec.Command(bin, "chat", "--view", "ndjson")
 	// 喋り方 (ADR-0001 Decision 4) と顔窓 (ADR-0032 Decision 3) を子 env に積む。
-	// os.Environ() に同キーが残っていても exec.Cmd が重複キーを後勝ちで dedupe する
-	// ので、合成済みの値が子へ届く（既存値が引用符不整合だと合成分がその中に呑まれる
-	// が、それは env を手で壊した場合だけ — GUI 自身の合成出力は常に整形式）。
-	_, faceSet := os.LookupEnv("TOMOBIT_FACE")
-	existing := os.Getenv("TOMOBIT_CLAUDE_ARGS_APPEND")
-	cmd.Env = composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing, a.guiConfig.FaceWindowEnabled())
+	cmd.Env = a.chatEnv()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)

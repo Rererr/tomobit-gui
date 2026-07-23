@@ -14,7 +14,7 @@ function faceWindowEnabled(faceEnabled?: boolean): boolean {
 export function SettingsPane() {
   const [speakingStyle, setSpeakingStyle] = useState("");
   const [savedStyle, setSavedStyle] = useState<string | null>(null);
-  const [faceEnabled, setFaceEnabled] = useState(true);
+  const [faceEnabled, setFaceEnabled] = useState<boolean | null>(null);
   const [savedFaceEnabled, setSavedFaceEnabled] = useState<boolean | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
@@ -43,7 +43,10 @@ export function SettingsPane() {
 
   async function handleSave() {
     try {
-      await SaveGUIConfig({ speaking_style: speakingStyle, face_enabled: faceEnabled });
+      // 保存操作は loadState "ready" の間しか到達しない（下の保存ボタンの描画条件）
+      // ので faceEnabled は load() で既に確定済みだが、型上は null を許すため
+      // 未確定既定の ON にフォールバックしておく。
+      await SaveGUIConfig({ speaking_style: speakingStyle, face_enabled: faceEnabled ?? true });
       setSavedStyle(speakingStyle);
       setSavedFaceEnabled(faceEnabled);
       setSaveState({ kind: "saved" });
@@ -84,12 +87,12 @@ export function SettingsPane() {
       <label className="settings-checkbox-field">
         <input
           type="checkbox"
-          checked={faceEnabled}
+          checked={faceEnabled ?? false}
           onChange={(event) => {
             setFaceEnabled(event.target.checked);
             setSaveState({ kind: "idle" });
           }}
-          disabled={loadState.kind !== "ready"}
+          disabled={faceEnabled === null}
         />
         <span>顔窓を開く</span>
       </label>
