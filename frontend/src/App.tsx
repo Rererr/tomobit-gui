@@ -11,8 +11,14 @@ import type { main } from "../wailsjs/go/models";
 import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from "./types";
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
+import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
 
 let nextMessageId = 0;
+
+// task.finished/task.cancelled と chat:exit の実測ずれ（一桁〜数十ms）より
+// 十分大きく、境界直後の一覧更新という体感（人には知覚できない背景更新の
+// 遅延）を壊さない値。詳細は ledgerRefreshCoalescer.ts。
+const LEDGER_REFRESH_DEBOUNCE_MS = 200;
 
 function createMessageId(): string {
   nextMessageId += 1;
@@ -68,6 +74,13 @@ function App() {
   // task.started で sid が一致した decided。同一タスク内で開く turn 全てに
   // 付与する（GUIは1プロセス1タスクなので次の decided が来るまで有効）。
   const activeDecidedRef = useRef<DecidedEvent | null>(null);
+  // task.finished/task.cancelled と chat:exit は同一境界の別の観測なので、
+  // 両方から呼ばれても refreshLedgerViews は1回に畳む（ledgerRefreshCoalescer）。
+  const ledgerRefreshRef = useRef(
+    createRefreshCoalescer(() => {
+      void refreshLedgerViews();
+    }, LEDGER_REFRESH_DEBOUNCE_MS),
+  );
 
   function setBoundary(v: boolean) {
     boundaryRef.current = v;
@@ -116,7 +129,7 @@ function App() {
       const expected = expectedExitRef.current;
       expectedExitRef.current = false;
       setBoundary(false);
-      void refreshLedgerViews();
+      ledgerRefreshRef.current.schedule();
       if (data.error !== "") {
         appendSystem(`チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`);
         return;
@@ -131,6 +144,7 @@ function App() {
       offView();
       offOut();
       offExit();
+      ledgerRefreshRef.current.cancel();
     };
   }, []);
 
@@ -267,7 +281,7 @@ function App() {
         // 済んだタスクの decided を次のタスクへ持ち越さない（次に decided が
         // 来ない旧本体・do 経由の場合に古い監査行が誤って表示されるのを防ぐ）。
         activeDecidedRef.current = null;
-        void refreshLedgerViews();
+        ledgerRefreshRef.current.schedule();
         break;
       }
       default:
@@ -367,7 +381,7 @@ function App() {
         <div style={{ display: activePane === "settings" ? "contents" : "none" }}>
           <SettingsPane />
         </div>
-        {activePane === "memory" && <MemoryPane />}
+        {activePane === "memory" && <MemoryPane tomoStatus={tomoStatus} />}
         {activePane === "session" && selectedSession !== null && (
           <SessionPane sessionId={selectedSession} />
         )}

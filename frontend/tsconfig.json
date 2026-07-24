@@ -23,6 +23,14 @@
   "include": [
     "src"
   ],
+  // *.test.ts は node --test (NodeネイティブのTypeScript実行) で走らせる —
+  // node:test の型は @types/node が要るが、テストのためだけに素の
+  // フロントエンドビルドへ依存を足したくない。tsc/vite のビルド対象からも
+  // 外れる（vite はエントリポイントからの到達性でバンドルするため、
+  // どのみちテストファイルには触れない）。
+  "exclude": [
+    "src/**/*.test.ts"
+  ],
   "references": [
     {
       "path": "./tsconfig.node.json"
