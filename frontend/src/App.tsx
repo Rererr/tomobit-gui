@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { Sidebar } from "./components/Sidebar";
+import { GrowthDisclosure } from "./components/GrowthDisclosure";
 import { ChatPane } from "./components/ChatPane";
 import { SettingsPane } from "./components/SettingsPane";
 import { MemoryPane } from "./components/MemoryPane";
@@ -345,6 +346,24 @@ function App() {
     setActivePane("session");
   }
 
+  // 成長開示（本体 ADR-0046）はヘッダのステージから開く。growth が無い
+  // （旧本体・台帳なし・最上位あいぼうは本体がフィールドごと省く）ときは
+  // 開示UI自体を出さない — 劣化は沈黙（decided と同じ扱い）。
+  const growth = tomoStatus !== null && tomoStatus.exists ? (tomoStatus.growth ?? null) : null;
+  const headerLine = (
+    <>
+      <span title="成長ステージ — 台帳からの導出View（顔窓と同じ式）">
+        {tomoStatus !== null && tomoStatus.exists ? `Tomo · ${tomoStatus.stage_name}` : "Tomo"}
+        {tomoStatus?.mood?.marker ? ` ${tomoStatus.mood.marker}` : ""}
+      </span>
+      {tomoStatus?.speak ? (
+        <span className="main-header-speak" title={tomoStatus.speak}>
+          「{tomoStatus.speak}」
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <div id="app">
       <Sidebar
@@ -359,17 +378,20 @@ function App() {
       />
       <main className="main-pane">
         {/* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView。
-            台帳がまだ無ければステージは名乗らない */}
+            台帳がまだ無ければステージは名乗らない。growth があれば
+            details/summary（本体 ADR-0040 Decision 2 の作法: 既定は畳む）で
+            次の段の内訳を開ける */}
         <header className="main-header">
-          <span title="成長ステージ — 台帳からの導出View（顔窓と同じ式）">
-            {tomoStatus !== null && tomoStatus.exists ? `Tomo · ${tomoStatus.stage_name}` : "Tomo"}
-            {tomoStatus?.mood?.marker ? ` ${tomoStatus.mood.marker}` : ""}
-          </span>
-          {tomoStatus?.speak ? (
-            <span className="main-header-speak" title={tomoStatus.speak}>
-              「{tomoStatus.speak}」
-            </span>
-          ) : null}
+          {growth !== null ? (
+            <details className="main-header-growth">
+              <summary title="成長ステージ — 開くと次の段に何が足りないかが見える">
+                <span className="main-header-line">{headerLine}</span>
+              </summary>
+              <GrowthDisclosure growth={growth} />
+            </details>
+          ) : (
+            <div className="main-header-line">{headerLine}</div>
+          )}
         </header>
         {/* チャットと設定はアンマウントせず隠すだけ: 入力途中の下書き・未保存の
             喋り方編集がペイン切替で消えるのを防ぐ（実機レビューで確認された

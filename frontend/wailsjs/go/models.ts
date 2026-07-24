@@ -130,6 +130,61 @@ export namespace main {
 	        this.provider = source["provider"];
 	    }
 	}
+	export class GrowthGate {
+	    name: string;
+	    value?: number;
+	    threshold: number;
+	    met: boolean;
+	    hint?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GrowthGate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.value = source["value"];
+	        this.threshold = source["threshold"];
+	        this.met = source["met"];
+	        this.hint = source["hint"];
+	    }
+	}
+	export class Growth {
+	    next: number;
+	    next_name: string;
+	    gates: GrowthGate[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Growth(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.next = source["next"];
+	        this.next_name = source["next_name"];
+	        this.gates = this.convertValues(source["gates"], GrowthGate);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class MemoryView {
 	    db_path: string;
 	    exists: boolean;
@@ -317,6 +372,7 @@ export namespace main {
 	    mood?: Mood;
 	    speak?: string;
 	    providers?: ProviderUsage[];
+	    growth?: Growth;
 	
 	    static createFrom(source: any = {}) {
 	        return new TomoStatus(source);
@@ -330,6 +386,7 @@ export namespace main {
 	        this.mood = this.convertValues(source["mood"], Mood);
 	        this.speak = source["speak"];
 	        this.providers = this.convertValues(source["providers"], ProviderUsage);
+	        this.growth = this.convertValues(source["growth"], Growth);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -218,15 +218,19 @@
 /* Tomo名ヘッダ (ADR-0001 Decision 5): 台帳から導出したテキストView */
 .main-header {
   flex-shrink: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
   min-width: 0;
   padding: 10px 24px;
   border-bottom: 1px solid var(--color-bg-raised);
   color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 600;
+}
+
+.main-header-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
 /* voice.Suggest の一言(本体ADR-0039)。黙っていれば要素ごと出さない —
@@ -239,6 +243,90 @@
   text-overflow: ellipsis;
   color: var(--color-text-muted-aa);
   font-weight: 400;
+}
+
+/* 成長開示（本体 ADR-0046）: ステージ表示から開くdetails/summary —
+   chat-turn-decided と同じネイティブ方式（既定は畳む、ADR-0040 Decision 2）。
+   summaryの▶マーカーを残すため行spanはinline-flexにし、マーカー分だけ
+   幅を詰めてspeakのellipsisを生かす */
+.main-header-growth > summary {
+  cursor: pointer;
+}
+
+.main-header-growth > summary:hover {
+  color: var(--color-text-bright);
+}
+
+.main-header-growth > summary > .main-header-line {
+  display: inline-flex;
+  vertical-align: bottom;
+  max-width: calc(100% - 24px);
+}
+
+.growth-disclosure {
+  margin-top: 8px;
+  font-weight: 400;
+}
+
+.growth-next {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--color-text-muted-aa);
+}
+
+.growth-table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background-color: var(--color-bg-well);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.growth-table th,
+.growth-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.growth-table th {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.growth-table td {
+  color: var(--color-text-secondary);
+}
+
+.growth-col-gate {
+  width: 22%;
+}
+
+.growth-col-value {
+  width: 16%;
+}
+
+.growth-col-target {
+  width: 16%;
+}
+
+/* 充足済みは薄く引かせ、足りないものと一手が主役になる */
+.growth-row--met td {
+  color: var(--color-text-muted);
+}
+
+/* 測定不能（value: null）は未達と同じ顔にしない（本体 ADR-0046 が実装の
+   合否と定めた区別）: 数値の欄に0や✗を置かず、斜体の語で「測れていない」
+   ことを示す。色だけに頼らずセル文言でも判別できる */
+.growth-cell-unmeasurable {
+  font-style: italic;
+  color: var(--color-text-muted-aa);
+}
+
+.growth-cell-hint {
+  color: var(--color-text-bright);
 }
 
 .chat-pane {

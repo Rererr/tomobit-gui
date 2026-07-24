@@ -23,6 +23,29 @@ type TomoStatus struct {
 	Mood      *Mood           `json:"mood,omitempty"`
 	Speak     string          `json:"speak,omitempty"`
 	Providers []ProviderUsage `json:"providers,omitempty"`
+	Growth    *Growth         `json:"growth,omitempty"`
+}
+
+// Growth は次の段への評価内訳(本体 ADR-0046 Decision 1)。旧本体はこの
+// フィールドを知らないので nil になりうる — その場合ヘッダの開示UIごと
+// 出さない(劣化は沈黙、decided と同じ扱い)。最上位(あいぼう)でも本体が
+// フィールドごと省く(偽の100%を作らない)。
+type Growth struct {
+	Next     int          `json:"next"`
+	NextName string       `json:"next_name"`
+	Gates    []GrowthGate `json:"gates"`
+}
+
+// GrowthGate の Value は *float64: JSONのnullは「測定不能」(競争のある島が
+// 無い等 — 本体 ADR-0045 Decision 1)で、0や未達と同じ顔にしてはならない
+// (本体 ADR-0046)。Hint は本体が持つ「次の一手」翻訳表の出力 — GUI側で
+// 再翻訳しない。
+type GrowthGate struct {
+	Name      string   `json:"name"`
+	Value     *float64 `json:"value"`
+	Threshold float64  `json:"threshold"`
+	Met       bool     `json:"met"`
+	Hint      string   `json:"hint,omitempty"`
 }
 
 // Mood is voice.Suggest の記号 — Marker は「!」「?」「z」等1文字で空文字もありうる。

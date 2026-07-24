@@ -122,6 +122,57 @@ func TestGetTomoStatus_providers欠落はnilにデコードされる(t *testing.
 	}
 }
 
+func TestGetTomoStatus_growthフィールドをそのままデコードする(t *testing.T) {
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":3,"stage_name":"わかもの","growth":{"next":4,"next_name":"おとな","gates":[{"name":"evidence","value":22.1,"threshold":3,"met":true},{"name":"sharpness","value":0.49,"threshold":0.2,"met":false,"hint":"duelや質問に答えて好みを教える"}]}}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Growth == nil {
+		t.Fatal("status.Growth = nil, want decoded growth")
+	}
+	if status.Growth.Next != 4 || status.Growth.NextName != "おとな" {
+		t.Errorf("growth = %+v, want next=4 おとな", status.Growth)
+	}
+	if len(status.Growth.Gates) != 2 {
+		t.Fatalf("gates = %+v, want 2 rows", status.Growth.Gates)
+	}
+	sharp := status.Growth.Gates[1]
+	if sharp.Name != "sharpness" || sharp.Met || sharp.Value == nil || *sharp.Value != 0.49 {
+		t.Errorf("gates[1] = %+v, want sharpness unmet value 0.49", sharp)
+	}
+	if sharp.Hint != "duelや質問に答えて好みを教える" {
+		t.Errorf("gates[1].Hint = %q, want 本体の一手そのまま", sharp.Hint)
+	}
+}
+
+func TestGetTomoStatus_growthのvalueがnullなら測定不能としてnilにデコードされる(t *testing.T) {
+	// 本体 ADR-0046: null は「競争のある島が無い」等の測定不能で、0とは別の状態。
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":3,"stage_name":"わかもの","growth":{"next":4,"next_name":"おとな","gates":[{"name":"sharpness","value":null,"threshold":0.2,"met":false,"hint":"二人目のProviderに会わせる（autoに任せる）"}]}}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Growth == nil || len(status.Growth.Gates) != 1 {
+		t.Fatalf("growth = %+v, want 1 gate", status.Growth)
+	}
+	if got := status.Growth.Gates[0].Value; got != nil {
+		t.Errorf("gates[0].Value = %v, want nil (測定不能を0にしない)", *got)
+	}
+}
+
+func TestGetTomoStatus_growth欠落はnilにデコードされる(t *testing.T) {
+	// 旧本体(ADR-0046以前)・最上位(あいぼう — 本体がフィールドごと省く)の両方を模す。
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":5,"stage_name":"あいぼう"}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Growth != nil {
+		t.Errorf("status.Growth = %+v, want nil", status.Growth)
+	}
+}
+
 func TestGetTomoStatus_不正JSONは握り潰さずエラーを返す(t *testing.T) {
 	withFakeTomobit(t, `echo 'not json'`)
 	if _, err := NewApp().GetTomoStatus(); err == nil {
