@@ -41,13 +41,26 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
    ```
    go install github.com/wailsapp/wails/v2/cmd/wails@latest
    git clone https://github.com/Rererr/tomobit-gui && cd tomobit-gui
+   ```
+
+3. 端末から起動できる形で入れる（推奨。核 tomobit と同じ `go install` 流儀で
+   `$GOBIN`（既定 `~/go/bin`）へ本番ビルドを置く。以後どこからでも `tomobit-gui`）:
+
+   ```
+   make install                    # frontend build → go install（Wails と同一の -tags/-ldflags）
+   ```
+
+   配布物の `.app` が要るとき（Finder/Launchpad から起動したいとき）は代わりに:
+
+   ```
    wails build                     # → build/bin/tomobit-gui.app（frontendのnpm installはwailsが行う）
    ```
 
 ## 起動
 
 ```
-open build/bin/tomobit-gui.app
+tomobit-gui                        # make install 済みなら端末から
+open build/bin/tomobit-gui.app     # wails build の .app から
 ```
 
 `tomobit` は PATH か `~/go/bin` にあれば見つかる（Finder起動のPATH欠落対策済み）。
