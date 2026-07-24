@@ -24,6 +24,29 @@ type TomoStatus struct {
 	Speak     string          `json:"speak,omitempty"`
 	Providers []ProviderUsage `json:"providers,omitempty"`
 	Growth    *Growth         `json:"growth,omitempty"`
+	Quota     []QuotaStatus   `json:"quota,omitempty"`
+}
+
+// QuotaStatus is 各Providerのベンダー申告の利用率(本体 ADR-0044 Decision 1)。
+// 本体が各Providerの usage 端点を「使用者自身の鍵」で読んだ観測値で、tomobit の
+// 保証ではない — 表示側はその境界を文言で示す。観測できなかったProviderは
+// Error(不明の理由)を持ち Windows が空: 沈黙させると「上限なし」に見えるため
+// 必ず1行として届く(本体 Decision 5)。集計・正規化は本体だけが担う — ここは
+// デコードするだけで再計算しない。旧本体はこのフィールドを知らないので nil に
+// なりうる(前方互換、本体 ADR-0032)。
+type QuotaStatus struct {
+	Provider   string        `json:"provider"`
+	Windows    []QuotaWindow `json:"windows,omitempty"`
+	Error      string        `json:"error,omitempty"`       // 不明の理由(Windows が空のとき)
+	ObservedAt int64         `json:"observed_at,omitempty"` // unix ms; 0 は Error のとき
+}
+
+// QuotaWindow の ResetsAt は本体側で unix ms に正規化済み(claude の RFC3339 と
+// codex の epoch 秒の方言差は本体が吸収する)。0 は「ベンダーが言わなかった」。
+type QuotaWindow struct {
+	Label       string  `json:"label"`
+	UsedPercent float64 `json:"used_percent"`
+	ResetsAt    int64   `json:"resets_at,omitempty"`
 }
 
 // Growth は次の段への評価内訳(本体 ADR-0046 Decision 1)。旧本体はこの

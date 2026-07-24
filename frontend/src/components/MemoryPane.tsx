@@ -47,6 +47,34 @@ function providerUsageDetail(p: main.ProviderUsage): string {
   return `${p.runs}回 ・ ${successText} ・ 最終 ${formatRelativeTime(p.last_ts)}`;
 }
 
+// formatResetTime は残量枠のリセットまでの相対表記。0・過去は空文字 —
+// ベンダーが言わなかった枠(resets_at=0)に「あと0分」を発明しない
+// (本体 cmd の relativeResetTime と同じ姿勢、本体 ADR-0044 Decision 5)。
+function formatResetTime(ms: number): string {
+  if (ms <= 0) {
+    return "";
+  }
+  const diff = ms - Date.now();
+  if (diff <= 0) {
+    return "";
+  }
+  if (diff < 3_600_000) {
+    return `あと${Math.floor(diff / 60_000)}分`;
+  }
+  if (diff < 86_400_000) {
+    return `あと${Math.floor(diff / 3_600_000)}時間`;
+  }
+  return `あと${Math.floor(diff / 86_400_000)}日`;
+}
+
+// quotaWindowText は残量1枠を「ラベル 使用率（リセット）」に圧縮する。使用率は
+// 本体がベンダー申告値をそのまま渡したもの — GUI側で丸める以外の加工はしない。
+function quotaWindowText(w: main.QuotaWindow): string {
+  const reset = formatResetTime(w.resets_at ?? 0);
+  const used = `${Math.round(w.used_percent)}%`;
+  return reset !== "" ? `${w.label} ${used}（${reset}）` : `${w.label} ${used}`;
+}
+
 // formatKV flattens a JSON object's own keys into "k=v" pairs — enough of a
 // gist for context/payload blobs whose shape varies by kind/signal (SCHEMA.md
 // D7); the raw text is shown as a fallback if it is not an object.
@@ -355,6 +383,7 @@ export function MemoryPane({ tomoStatus }: MemoryPaneProps) {
             : null;
 
         const providerUsage = tomoStatus?.providers ?? [];
+        const quota = tomoStatus?.quota ?? [];
 
         return (
         <>
@@ -366,6 +395,34 @@ export function MemoryPane({ tomoStatus }: MemoryPaneProps) {
                   <li key={p.provider} className="memory-item">
                     <div className="memory-item-title">{p.provider}</div>
                     <div className="memory-item-detail">{providerUsageDetail(p)}</div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* 残量（本体 ADR-0044）: 各Providerが自分の usage 端点で申告した
+              利用率。見出しで「tomobit の保証ではない」境界を示す（本体
+              Consequences 項2）。観測できなかったProviderは 0% を発明せず
+              不明（理由）を出す（本体 Decision 5）。 */}
+          {quota.length > 0 && (
+            <section className="memory-section memory-quota">
+              <h3 title="各Providerが自分の usage 端点で申告した利用率 — tomobit の保証ではない">
+                残量（各Providerの申告値・保証ではない）
+              </h3>
+              <ul className="memory-list">
+                {quota.map((q) => (
+                  <li key={q.provider} className="memory-item">
+                    <div className="memory-item-title">{q.provider}</div>
+                    {q.windows && q.windows.length > 0 ? (
+                      <div className="memory-item-detail">
+                        {q.windows.map((w) => quotaWindowText(w)).join(" ・ ")}
+                      </div>
+                    ) : (
+                      <div className="memory-item-detail memory-quota-unknown">
+                        不明（{q.error && q.error.trim() !== "" ? q.error : "理由不明"}）
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
