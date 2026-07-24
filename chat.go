@@ -45,6 +45,27 @@ type chatProc struct {
 	stdin   io.WriteCloser
 	done    chan struct{}
 	writeMu sync.Mutex // serializes write calls; deliberately not a.mu (see write)
+
+	// taskOpen tracks whether a task is currently open in this chat, read from
+	// the view stream's task.started / task.finished|cancelled (本体 ADR-0032
+	// の契約)。働く場所の宣言を送ってよい瞬間の判定にだけ使う: タスクの途中で
+	// 送っても本体は「/new で区切ってから」と断り、宣言の行数だけ断り文句が
+	// 会話面に並ぶ（実機で確認）。境界の規律そのものは本体が持ったままで、
+	// GUI はここで「開いているか」という観測事実だけを見る。
+	taskMu   sync.Mutex
+	taskOpen bool
+}
+
+func (p *chatProc) setTaskOpen(v bool) {
+	p.taskMu.Lock()
+	p.taskOpen = v
+	p.taskMu.Unlock()
+}
+
+func (p *chatProc) isTaskOpen() bool {
+	p.taskMu.Lock()
+	defer p.taskMu.Unlock()
+	return p.taskOpen
 }
 
 // write serializes this proc's stdin writes against other write calls on the
@@ -122,10 +143,11 @@ func utf8CompletePrefix(b []byte) int {
 	return start
 }
 
-// escapeAppendSystemPrompt double-quotes s for the body's TOMOBIT_CLAUDE_ARGS_APPEND
+// quoteArgToken double-quotes s for the body's TOMOBIT_CLAUDE_ARGS_APPEND
 // parser (ADR-0001 追記): \ and " become \\ and \" so the value survives as one
-// double-quoted token even when the speaking style holds spaces or quotes.
-func escapeAppendSystemPrompt(s string) string {
+// double-quoted token even when the speaking style — or a directory path
+// (ADR-0004 Decision 2) — holds spaces or quotes.
+func quoteArgToken(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)
 	b.WriteByte('"')
@@ -143,8 +165,12 @@ func escapeAppendSystemPrompt(s string) string {
 // (ADR-0001 追記): the speaking style becomes a trailing --append-system-prompt,
 // appended after whatever the parent process env already carries so an
 // existing append survives instead of being clobbered.
+//
+// 読み取り先はここを通らない (ADR-0004 改訂 / 本体 ADR-0047): この env は
+// claude アダプタ専用の口で、codex を選んだ人には無言で効かなくなる。
+// 働く場所は本体の Request の一級市民になったので、GUI は /add-dir で渡す。
 func composeClaudeArgsAppend(existing, speakingStyle string) string {
-	arg := "--append-system-prompt " + escapeAppendSystemPrompt(speakingStyle)
+	arg := "--append-system-prompt " + quoteArgToken(speakingStyle)
 	if existing == "" {
 		return arg
 	}
@@ -174,13 +200,73 @@ func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingA
 	return env
 }
 
+// workspaceDeclaration is what the GUI tells a running chat about the places
+// Tomo works (本体 ADR-0047 Decision 4 の /cd・/add-dir)。宣言は全置換で組む:
+// GUI は一覧まるごとを持っているので、差分を送るより「消してから並べ直す」
+// 方が画面と本体のズレようがない。
+//
+// 作業ディレクトリを未設定へ戻す宣言は無い（/cd に「起動時の場所へ戻れ」の
+// 語彙が無い）— そのときは /cd を送らず、次のプロセス起動で継承に戻る。
+func workspaceDeclaration(workingDir string, readDirs []string) string {
+	var b strings.Builder
+	if workingDir != "" {
+		b.WriteString("/cd " + workingDir + "\n")
+	}
+	b.WriteString("/add-dir clear\n")
+	for _, dir := range readDirs {
+		b.WriteString("/add-dir " + dir + "\n")
+	}
+	return b.String()
+}
+
+// splitExistingDirs partitions dirs into the ones that are still directories
+// and the ones that are not (ADR-0004 Decision 5). stat を引数に取るのは
+// テストのため — 実体は os.Stat。
+func splitExistingDirs(dirs []string, stat func(string) (os.FileInfo, error)) (existing, missing []string) {
+	for _, dir := range dirs {
+		if fi, err := stat(dir); err == nil && fi.IsDir() {
+			existing = append(existing, dir)
+			continue
+		}
+		missing = append(missing, dir)
+	}
+	return existing, missing
+}
+
+// checkWorkingDir fails with a named error when the configured working dir is
+// gone (ADR-0004 Decision 1): exec が cmd.Dir の不在で返す chdir エラーは
+// 人にはどの設定が悪いのか読めない。空（未設定）は継承なので何も言わない。
+func checkWorkingDir(dir string, stat func(string) (os.FileInfo, error)) error {
+	if dir == "" {
+		return nil
+	}
+	fi, err := stat(dir)
+	if err != nil {
+		return fmt.Errorf("作業ディレクトリが見つからない: %s — チャット下部のバーで選び直すこと (%w)", dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("作業ディレクトリがディレクトリではない: %s — チャット下部のバーで選び直すこと", dir)
+	}
+	return nil
+}
+
 // composeChatArgs builds the child chat's argv (本体 ADR-0043 Decision 5)。
 // composeChatEnv と同じ「合成は純関数へ切り出す」パターン。--provider は
 // 常に明示で積む: 未設定を無指定で流すと本体の既定に黙って乗ることになり、
 // 既定が変わったとき GUI の挙動が無言で変わる — Decision 5 が塞ぐ不正直さ
 // そのもの。未設定の解決（=auto）は GUIConfig.ChatProvider が持つ。
-func composeChatArgs(provider string) []string {
-	return []string{"chat", "--view", "ndjson", "--provider", provider}
+// 働く場所も起動時は argv で渡す (本体 ADR-0047 Decision 6): 起動直後に
+// /cd・/add-dir を送る形だと、本体の応答（"add-dir: …"）が人の最初の一言より
+// 先にチャット面へ並ぶ — 会話の器が配線の独り言で始まってしまう。
+func composeChatArgs(provider, workingDir string, readDirs []string) []string {
+	args := []string{"chat", "--view", "ndjson", "--provider", provider}
+	if workingDir != "" {
+		args = append(args, "--cd", workingDir)
+	}
+	for _, dir := range readDirs {
+		args = append(args, "--add-dir", dir)
+	}
+	return args
 }
 
 // findTomobit looks on PATH first, then in ~/go/bin — a Finder-launched .app
@@ -212,6 +298,17 @@ func (a *App) chatEnv() []string {
 	return composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing, a.guiConfig.FaceWindowEnabled())
 }
 
+// newChatCmd assembles the chat child: argv（Provider 選択 — 本体 ADR-0043
+// Decision 5 / 働く場所 — 本体 ADR-0047 Decision 6）と env（喋り方 ADR-0001
+// Decision 4 / 顔窓 本体 ADR-0032 Decision 3）。GUI 自身は chdir しない: 働く
+// 場所は --cd で子プロセスにだけ渡り、顔窓や status/forget など他の子プロセスへ
+// 副作用を撒かない。Caller holds a.mu.
+func (a *App) newChatCmd(bin string, readDirs []string) *exec.Cmd {
+	cmd := exec.Command(bin, composeChatArgs(a.guiConfig.ChatProvider(), a.guiConfig.WorkingDir, readDirs)...)
+	cmd.Env = a.chatEnv()
+	return cmd
+}
+
 // ensureProcLocked spawns `tomobit chat --view ndjson --provider <choice>`
 // if none is running (provider は gui.json の選択、未設定は auto — 本体
 // ADR-0043 Decision 5)。
@@ -223,13 +320,19 @@ func (a *App) ensureProcLocked() error {
 	if a.proc != nil {
 		return nil
 	}
+	// 設定の誤りはバイナリ探索より先に判じる: 作業ディレクトリの不在は起動を
+	// 止める (ADR-0004 Decision 1) — 立つ場所が無いまま起動して exec の生の
+	// chdir エラーを見せない。
+	if err := checkWorkingDir(a.guiConfig.WorkingDir, os.Stat); err != nil {
+		return err
+	}
 	bin, err := findTomobit(exec.LookPath, os.UserHomeDir)
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(bin, composeChatArgs(a.guiConfig.ChatProvider())...)
-	// 喋り方 (ADR-0001 Decision 4) と顔窓 (ADR-0032 Decision 3) を子 env に積む。
-	cmd.Env = a.chatEnv()
+	// 読み取り先の不在は劣化に留める (同 Decision 5): 落として、後で言う。
+	readDirs, missingDirs := splitExistingDirs(a.guiConfig.NormalizedReadDirs(), os.Stat)
+	cmd := a.newChatCmd(bin, readDirs)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)
@@ -252,9 +355,10 @@ func (a *App) ensureProcLocked() error {
 	// (os/exec StdoutPipe の規約)。プロセスが死ねば EOF で必ず抜ける。
 	var readers sync.WaitGroup
 	readers.Add(2)
-	sb := a.newScrollbackWriter()
+	sb, sbDiag := a.newScrollbackWriter()
 	go func() { defer readers.Done(); a.pumpViewStream(stdout, sb) }()
 	go func() { defer readers.Done(); a.pumpStream(stderr, "stderr") }()
+	a.reportStartupDiagnostics(missingDirsDiagnostic(missingDirs), sbDiag)
 	go func() {
 		readers.Wait()
 		err := cmd.Wait()
@@ -342,15 +446,16 @@ func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 // the consent gate (ADR-0003 Decision 0): guiConfig.TranscriptCacheEnabled が
 // false なら nil を返し、pumpViewStream は 1 バイトも書かない。Caller は
 // ensureProcLocked で a.mu を保持しているため a.guiConfig の読みは安全。
-// 書き込み診断はチャットを止めず、既存の chat:out stderr 経路へ1行流す。
-func (a *App) newScrollbackWriter() *scrollbackWriter {
+// 書き込み診断はチャットを止めず、既存の chat:out stderr 経路へ1行流す —
+// ただし発火は呼び出し側 (reportStartupDiagnostics) に返す: a.mu を保持した
+// ままの emitEvent は同じ mutex を取り直してデッドロックする。
+func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
 	if !a.guiConfig.TranscriptCacheEnabled() {
-		return nil
+		return nil, ""
 	}
 	dir, err := scrollbackDir()
 	if err != nil {
-		a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: "gui-scrollback: 保存先の解決に失敗: " + err.Error() + "\n"})
-		return nil
+		return nil, "gui-scrollback: 保存先の解決に失敗: " + err.Error()
 	}
 	return &scrollbackWriter{
 		dir:   dir,
@@ -366,7 +471,37 @@ func (a *App) newScrollbackWriter() *scrollbackWriter {
 			defer a.mu.Unlock()
 			return a.guiConfig.TranscriptCacheEnabled()
 		},
+	}, ""
+}
+
+// missingDirsDiagnostic wording for read dirs dropped at launch (ADR-0004
+// Decision 5). 空のときは空文字 — 何も落ちていないなら何も言わない。
+func missingDirsDiagnostic(missing []string) string {
+	if len(missing) == 0 {
+		return ""
 	}
+	return "読み取り先が見つからないため外した: " + strings.Join(missing, ", ")
+}
+
+// reportStartupDiagnostics streams the launch-time notes (dropped read dirs,
+// scrollback wiring) to the stderr 面. 別 goroutine で流すのは a.mu のため:
+// 呼び出し元の ensureProcLocked はロックを保持しており、emitEvent は同じ
+// mutex を取る。空文字は「言うことが無い」なので落とす。
+func (a *App) reportStartupDiagnostics(notes ...string) {
+	var lines []string
+	for _, note := range notes {
+		if note != "" {
+			lines = append(lines, note)
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	go func() {
+		for _, line := range lines {
+			a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: line + "\n"})
+		}
+	}()
 }
 
 // emitViewLine decodes one NDJSON line and emits it as a chat:view event
@@ -384,5 +519,28 @@ func (a *App) emitViewLine(line []byte) {
 		a.emitEvent(eventChatView, map[string]any{"type": "note", "text": string(line)})
 		return
 	}
+	a.trackTaskBoundary(ev)
 	a.emitEvent(eventChatView, ev)
+}
+
+// trackTaskBoundary follows task.started / task.finished|cancelled so
+// SetWorkspace knows whether a task is open (see chatProc.taskOpen). 未知の
+// type は無視する — 契約どおり (本体 ADR-0032)。
+func (a *App) trackTaskBoundary(ev map[string]any) {
+	typ, _ := ev["type"].(string)
+	var open bool
+	switch typ {
+	case "task.started":
+		open = true
+	case "task.finished", "task.cancelled":
+		open = false
+	default:
+		return
+	}
+	a.mu.Lock()
+	p := a.proc
+	a.mu.Unlock()
+	if p != nil {
+		p.setTaskOpen(open)
+	}
 }

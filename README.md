@@ -15,6 +15,9 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
   `--append-system-prompt` へ注入。台帳は汚れない。反映は次のNew chatで区切った後から）
 - 簡易メモリ管理（connections / experiences / curiosity_queue の読み取り専用View。
   記憶は会話から積まれる — 編集・削除の器官はまだ無い）
+- Tomoが働く場所の設定（チャットのログと入力欄の間の作業バー。端末の `cd` にあたる
+  表明で、Providerによらず効く（本体ADR-0047）。走行中のチャットにもその場で届く —
+  ただしタスクの途中なら本体が「/new で区切ってから」と答える）
 
 ユーザープロフィール機能は持たない。
 
@@ -73,6 +76,7 @@ open build/bin/tomobit-gui.app     # wails build の .app から
 - [ADR-0001](docs/decisions/ADR-0001-gui-architecture.md) — GUIは第三のレンダラ（台帳はひとつ / `tomobit chat` 子プロセス / メモリはro View / 喋り方は起動引数 / 姿は顔窓のまま）
 - [ADR-0002](docs/decisions/ADR-0002-tech-stack.md) — 技術スタック（Wails v2 / React + TypeScript strict / LLMは既存Provider経路=claude-code既定・API直結却下）
 - [ADR-0003](docs/decisions/ADR-0003-session-transcript-cache.md) — 過去セッションの表示=スクロールバックの永続化（viewストリーム素通し追記・忘却より長生きしない・上限つき / **オプトイン・既定OFF**で先行実装 — 有効化するまで1バイトも書かない。既定の是非は所有者の裁定待ち）
+- [ADR-0004](docs/decisions/ADR-0004-workspace-scope.md) — Tomoが働く場所（作業ディレクトリ=chat子プロセスのcwd / 読み取り先は本体の`/add-dir`へ宣言=Provider非依存 / 置き場はログと入力欄の間 / 反映は走行中のチャットにも届く。Decision 2/3 は本体ADR-0047を受けて改訂）
 - [BACKLOG](docs/BACKLOG.md) — 残課題（本体側の設計待ち / GUI側の未実装）
 
 ## Stack

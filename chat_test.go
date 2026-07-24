@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -281,7 +282,7 @@ func TestPumpViewStream_stdoutをNDJSONイベント列にフレーミングす�
 	}
 }
 
-func TestEscapeAppendSystemPrompt_バックスラッシュと二重引用符だけをエスケープ(t *testing.T) {
+func TestQuoteArgToken_バックスラッシュと二重引用符だけをエスケープ(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"素のテキストはダブルクォートで包むだけ", "関西弁で", `"関西弁で"`},
 		{"二重引用符はエスケープ", `言う"こと"`, `"言う\"こと\""`},
@@ -290,16 +291,14 @@ func TestEscapeAppendSystemPrompt_バックスラッシュと二重引用符だ�
 		{"改行はそのまま引用符内に残す", "1行目\n2行目", "\"1行目\n2行目\""},
 	}
 	for _, c := range cases {
-		if got := escapeAppendSystemPrompt(c.in); got != c.want {
-			t.Errorf("%s: escapeAppendSystemPrompt(%q) = %q, want %q", c.name, c.in, got, c.want)
+		if got := quoteArgToken(c.in); got != c.want {
+			t.Errorf("%s: quoteArgToken(%q) = %q, want %q", c.name, c.in, got, c.want)
 		}
 	}
 }
 
 func TestComposeClaudeArgsAppend_既存の値の後ろに追記される(t *testing.T) {
-	cases := []struct {
-		name, existing, style, want string
-	}{
+	cases := []struct{ name, existing, style, want string }{
 		{
 			"既存が空なら--append-system-promptだけ",
 			"", "関西弁で",
@@ -318,6 +317,123 @@ func TestComposeClaudeArgsAppend_既存の値の後ろに追記される(t *test
 	}
 }
 
+// ADR-0004 改訂 / 本体 ADR-0047: 読み取り先は claude 固有の env を通らない。
+// 通っていた頃は codex を選んだ人に無言で効かなくなっていた。
+func TestComposeChatEnv_読み取り先はclaude固有のenvに載らない(t *testing.T) {
+	env := composeChatEnv([]string{"PATH=/usr/bin"}, "", true, "", false)
+	for _, e := range env {
+		if strings.Contains(e, "--add-dir") {
+			t.Errorf("読み取り先が env 経由で渡っている: %q", e)
+		}
+	}
+}
+
+// 働く場所の宣言は本体のコマンド語彙で組む (本体 ADR-0047 Decision 4)。
+// 一覧は全置換 — GUI が持つ一覧がそのまま本体の一覧になる。
+func TestWorkspaceDeclaration_全置換の宣言を組む(t *testing.T) {
+	got := workspaceDeclaration("/w", []string{"/a", "/b 空白入り"})
+	want := "/cd /w\n/add-dir clear\n/add-dir /a\n/add-dir /b 空白入り\n"
+	if got != want {
+		t.Errorf("declaration = %q, want %q", got, want)
+	}
+	// 読み取り先が空でも clear は送る: 画面で全部外したことが本体に伝わらないと
+	// 「消したのに残っている」というズレになる。
+	if got := workspaceDeclaration("/w", nil); got != "/cd /w\n/add-dir clear\n" {
+		t.Errorf("空の一覧でも clear を送るべき: %q", got)
+	}
+	// 作業ディレクトリ未設定に戻す語彙は本体に無いので /cd は送らない。
+	if got := workspaceDeclaration("", []string{"/a"}); got != "/add-dir clear\n/add-dir /a\n" {
+		t.Errorf("未設定の作業ディレクトリで /cd を送った: %q", got)
+	}
+}
+
+// ADR-0004 Decision 5: 消えた読み取り先は落とす（会話は止めない）。
+func TestSplitExistingDirs_実在するディレクトリだけ残し消えたものを返す(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	existing, missing := splitExistingDirs([]string{dir, file, filepath.Join(dir, "gone")}, os.Stat)
+	if len(existing) != 1 || existing[0] != dir {
+		t.Errorf("existing = %v, want [%s]", existing, dir)
+	}
+	if len(missing) != 2 {
+		t.Errorf("missing = %v, want 2件（ファイルと不在パス）", missing)
+	}
+	if got := missingDirsDiagnostic(missing); !strings.Contains(got, file) {
+		t.Errorf("落としたことを言わない診断: %q", got)
+	}
+	if got := missingDirsDiagnostic(nil); got != "" {
+		t.Errorf("落としていないのに言う: %q", got)
+	}
+}
+
+// hasFlag/hasFlagValue: argv の並びを見る小道具（起動条件のテスト用）。
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlagValue(args []string, flag, value string) bool {
+	for i, a := range args {
+		if a == flag && i+1 < len(args) && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// ADR-0004 Decision 1 / 本体 ADR-0047 Decision 6: 働く場所は起動時 argv で渡る
+// （起動直後にコマンドを送ると本体の応答が会話面の1行目に並ぶため）。組み立ては
+// 子プロセスを立てないと踏めないので、ここで固定する。
+func TestNewChatCmd_働く場所が起動argvに乗る(t *testing.T) {
+	t.Setenv("TOMOBIT_CLAUDE_ARGS_APPEND", "")
+	dir := t.TempDir()
+	a := &App{guiConfig: GUIConfig{WorkingDir: dir, Provider: "claude-code"}}
+	cmd := a.newChatCmd("/usr/local/bin/tomobit", []string{"/a"})
+	if !hasFlagValue(cmd.Args, "--cd", dir) {
+		t.Errorf("--cd が argv に無い: %v", cmd.Args)
+	}
+	if !hasFlagValue(cmd.Args, "--add-dir", "/a") {
+		t.Errorf("--add-dir が argv に無い: %v", cmd.Args)
+	}
+	// 未設定の作業ディレクトリは継承（cmd.Dir 空）— 設定を入れるまで挙動は変わらない。
+	if cmd := (&App{}).newChatCmd("/usr/local/bin/tomobit", nil); hasFlag(cmd.Args, "--cd") {
+		t.Errorf("未設定なのに --cd を積んだ（GUI の起動ディレクトリを継承すべき）: %v", cmd.Args)
+	}
+}
+
+// ADR-0004 Decision 1: 作業ディレクトリの不在は起動を止め、どのパスが悪いか名指す。
+func TestCheckWorkingDir_不在とファイル指定は名指しのエラー未設定は通す(t *testing.T) {
+	dir := t.TempDir()
+	if err := checkWorkingDir("", os.Stat); err != nil {
+		t.Errorf("未設定（継承）を止めた: %v", err)
+	}
+	if err := checkWorkingDir(dir, os.Stat); err != nil {
+		t.Errorf("実在するディレクトリを止めた: %v", err)
+	}
+	gone := filepath.Join(dir, "gone")
+	err := checkWorkingDir(gone, os.Stat)
+	if err == nil {
+		t.Fatal("不在の作業ディレクトリを通した")
+	}
+	if !strings.Contains(err.Error(), gone) {
+		t.Errorf("どのパスが悪いか名指さない: %v", err)
+	}
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWorkingDir(file, os.Stat); err == nil {
+		t.Error("ファイルを作業ディレクトリとして通した")
+	}
+}
+
 func TestFindTomobit_PATHになければgoのbinへフォールバックし両方なければ意味のあるエラー(t *testing.T) {
 	notFound := func(string) (string, error) { return "", errors.New("not found") }
 	if _, err := findTomobit(notFound, func() (string, error) { return t.TempDir(), nil }); err == nil {
@@ -333,7 +449,7 @@ func TestFindTomobit_PATHになければgoのbinへフォールバックし両�
 // 本体 ADR-0043 Decision 5: --provider は常に明示で積む。未指定で本体の既定に
 // 乗ると、既定が変わったとき GUI の挙動が無言で変わる。
 func TestComposeChatArgs_Providerを常に明示で積む(t *testing.T) {
-	got := composeChatArgs("codex")
+	got := composeChatArgs("codex", "", nil)
 	want := []string{"chat", "--view", "ndjson", "--provider", "codex"}
 	if len(got) != len(want) {
 		t.Fatalf("args = %v, want %v", got, want)
@@ -349,8 +465,8 @@ func TestComposeChatArgs_Providerを常に明示で積む(t *testing.T) {
 // を composeChatArgs へ渡すこと自体は子プロセス起動なしに見えないため、解決側
 // （ChatProvider）と合成側（composeChatArgs）の合流をここで固定する。
 func TestComposeChatArgs_未設定のguiConfigはautoになる(t *testing.T) {
-	got := composeChatArgs(GUIConfig{}.ChatProvider())
-	if got[len(got)-2] != "--provider" || got[len(got)-1] != "auto" {
-		t.Errorf("args = %v, want trailing --provider auto", got)
+	got := composeChatArgs(GUIConfig{}.ChatProvider(), "", nil)
+	if !hasFlagValue(got, "--provider", "auto") {
+		t.Errorf("args = %v, want --provider auto", got)
 	}
 }

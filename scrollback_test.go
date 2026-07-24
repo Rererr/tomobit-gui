@@ -17,11 +17,11 @@ import (
 func TestNewScrollbackWriter_既定OFFでは書き手を作らない(t *testing.T) {
 	// キー無し(未設定) = OFF: newScrollbackWriter が nil を返し、pumpViewStream は
 	// sb == nil で record を一切呼ばない = 1バイトも書かれない。
-	if w := (&App{}).newScrollbackWriter(); w != nil {
+	if w, _ := (&App{}).newScrollbackWriter(); w != nil {
 		t.Errorf("transcript_cache 未設定なのに書き手が作られた")
 	}
 	off := false
-	if w := (&App{guiConfig: GUIConfig{TranscriptCache: &off}}).newScrollbackWriter(); w != nil {
+	if w, _ := (&App{guiConfig: GUIConfig{TranscriptCache: &off}}).newScrollbackWriter(); w != nil {
 		t.Errorf("transcript_cache=false なのに書き手が作られた")
 	}
 }
@@ -193,7 +193,7 @@ func TestPumpViewStream_OFFではスクロールバックを1バイトも生成�
 	app := NewApp() // guiConfig ゼロ値 = transcript_cache 未設定 = OFF
 	app.emit = func(string, ...interface{}) {}
 
-	sb := app.newScrollbackWriter()
+	sb, _ := app.newScrollbackWriter()
 	if sb != nil {
 		t.Fatal("OFF なのに書き手が作られた")
 	}

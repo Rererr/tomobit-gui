@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function AmendExperience(arg1:main.AmendRequest):Promise<main.WriteResult>;
 
+export function ChooseDirectory(arg1:string,arg2:string):Promise<string>;
+
 export function EndTask():Promise<boolean>;
 
 export function ForgetExperiences(arg1:Array<string>):Promise<main.WriteResult>;
@@ -23,3 +25,5 @@ export function GetTomoStatus():Promise<main.TomoStatus>;
 export function SaveGUIConfig(arg1:main.GUIConfig):Promise<void>;
 
 export function SendLine(arg1:string):Promise<void>;
+
+export function SetWorkspace(arg1:string,arg2:Array<string>):Promise<main.WorkspaceUpdate>;

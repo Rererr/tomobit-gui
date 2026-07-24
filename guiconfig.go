@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GUIConfig is ~/.tomobit/gui.json's whole shape.
@@ -27,6 +28,15 @@ type GUIConfig struct {
 	// 機微の永続は同意ゲートの向こう側なので、人が明示 true を入れるまで
 	// 1バイトも書かない（既存 gui.json にキーが無いのが安全側の初期状態）。
 	TranscriptCache *bool `json:"transcript_cache,omitempty"`
+
+	// WorkingDir はチャット子プロセスの作業ディレクトリ (ADR-0004 Decision 1)。
+	// 空＝GUI の起動ディレクトリをそのまま継承する（従来挙動）。string の ""
+	// が「未設定」を表せるので Provider と同じくポインタは要らない。
+	WorkingDir string `json:"working_dir,omitempty"`
+
+	// ReadDirs は作業ディレクトリの外で読ませる場所 (ADR-0004 Decision 2)。
+	// claude の --add-dir へ落ちるため、Provider が claude-code のときだけ効く。
+	ReadDirs []string `json:"read_dirs,omitempty"`
 
 	// Provider はチャット子プロセスへ渡す --provider（本体 ADR-0043 Decision 5）。
 	// FaceEnabled らと同じ「キー無し＝既定」の流儀だが、string は "" 自体が
@@ -48,6 +58,24 @@ func (c GUIConfig) ChatProvider() string {
 		return "auto"
 	}
 	return c.Provider
+}
+
+// NormalizedReadDirs returns the extra readable dirs with blanks and repeats
+// dropped, order preserved (ADR-0004 Decision 2). 手書きの gui.json も通るので
+// 正規化は読み手側に置く: 同じ --add-dir を二度積んでも害はないが、UI の
+// チップも argv も「一度言えば一度だけ」の方が読める。
+func (c GUIConfig) NormalizedReadDirs() []string {
+	seen := make(map[string]bool, len(c.ReadDirs))
+	dirs := make([]string, 0, len(c.ReadDirs))
+	for _, d := range c.ReadDirs {
+		d = strings.TrimSpace(d)
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		dirs = append(dirs, d)
+	}
+	return dirs
 }
 
 // FaceWindowEnabled resolves the tri-state (unset/ON/explicit OFF) to the

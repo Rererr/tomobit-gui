@@ -1,9 +1,17 @@
-import { useEffect, useState } from "react";
-import { GetGUIConfig, SaveGUIConfig } from "../../wailsjs/go/main/App";
+import { useEffect, useRef, useState } from "react";
+import type { main } from "../../wailsjs/go/models";
 import { errorMessage } from "../errorMessage";
 
 type SaveState = { kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string };
-type LoadState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string };
+
+interface SettingsPaneProps {
+  // gui.json の唯一のコピー（App が持つ）。未読み込みは null。作業バーも同じ
+  // コピーへ書くため、このペインは自分で読み書きしない (ADR-0004 Consequences)。
+  config: main.GUIConfig | null;
+  loadError: string | null;
+  onReload: () => void;
+  onSave: (patch: Partial<main.GUIConfig>) => Promise<void>;
+}
 
 // 未設定（キー無しJSON）は ON — GUIConfig.FaceWindowEnabled の既定と揃える
 // （Go側: guiconfig.go）。
@@ -22,64 +30,39 @@ function chatProvider(provider?: string): string {
   return provider || "auto";
 }
 
-export function SettingsPane() {
+export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPaneProps) {
   const [speakingStyle, setSpeakingStyle] = useState("");
-  const [savedStyle, setSavedStyle] = useState<string | null>(null);
-  const [faceEnabled, setFaceEnabled] = useState<boolean | null>(null);
-  const [savedFaceEnabled, setSavedFaceEnabled] = useState<boolean | null>(null);
+  const [faceEnabled, setFaceEnabled] = useState(true);
   // 会話の全文を残す (ADR-0003 Decision 0)。既定 OFF — キー無しは false 扱い
   // （faceWindowEnabled と違い未設定でも ON にしない）。
-  const [transcriptCache, setTranscriptCache] = useState<boolean | null>(null);
-  const [savedTranscriptCache, setSavedTranscriptCache] = useState<boolean | null>(null);
+  const [transcriptCache, setTranscriptCache] = useState(false);
   // チャットのProvider（本体 ADR-0043 Decision 5）。既定 auto — Tomoが経験から選ぶ。
-  const [provider, setProvider] = useState<string | null>(null);
-  const [savedProvider, setSavedProvider] = useState<string | null>(null);
+  const [provider, setProvider] = useState("auto");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
-  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
-
-  async function load() {
-    setLoadState({ kind: "loading" });
-    try {
-      const config = await GetGUIConfig();
-      setSpeakingStyle(config.speaking_style);
-      setSavedStyle(config.speaking_style);
-      const enabled = faceWindowEnabled(config.face_enabled);
-      setFaceEnabled(enabled);
-      setSavedFaceEnabled(enabled);
-      const cache = config.transcript_cache === true;
-      setTranscriptCache(cache);
-      setSavedTranscriptCache(cache);
-      const prov = chatProvider(config.provider);
-      setProvider(prov);
-      setSavedProvider(prov);
-      setLoadState({ kind: "ready" });
-    } catch (err) {
-      setLoadState({
-        kind: "error",
-        message: `読み込みに失敗: ${errorMessage(err)}`,
-      });
-    }
-  }
+  // 編集欄をディスクの値で埋めるのは初回だけ: 作業バーが gui.json を書いて
+  // config が差し替わっても、編集途中の喋り方を消さない（ペイン切替で下書きを
+  // 失わない既存の姿勢と同じ）。
+  const initialized = useRef(false);
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (config === null || initialized.current) {
+      return;
+    }
+    initialized.current = true;
+    setSpeakingStyle(config.speaking_style);
+    setFaceEnabled(faceWindowEnabled(config.face_enabled));
+    setTranscriptCache(config.transcript_cache === true);
+    setProvider(chatProvider(config.provider));
+  }, [config]);
 
   async function handleSave() {
     try {
-      // 保存操作は loadState "ready" の間しか到達しない（下の保存ボタンの描画条件）
-      // ので faceEnabled は load() で既に確定済みだが、型上は null を許すため
-      // 未確定既定の ON にフォールバックしておく。
-      await SaveGUIConfig({
+      await onSave({
         speaking_style: speakingStyle,
-        face_enabled: faceEnabled ?? true,
-        transcript_cache: transcriptCache ?? false,
-        provider: provider ?? "auto",
+        face_enabled: faceEnabled,
+        transcript_cache: transcriptCache,
+        provider,
       });
-      setSavedStyle(speakingStyle);
-      setSavedFaceEnabled(faceEnabled);
-      setSavedTranscriptCache(transcriptCache);
-      setSavedProvider(provider);
       setSaveState({ kind: "saved" });
     } catch (err) {
       setSaveState({
@@ -89,11 +72,13 @@ export function SettingsPane() {
     }
   }
 
+  const ready = config !== null;
   const dirty =
-    (savedStyle !== null && speakingStyle !== savedStyle) ||
-    (savedFaceEnabled !== null && faceEnabled !== savedFaceEnabled) ||
-    (savedTranscriptCache !== null && transcriptCache !== savedTranscriptCache) ||
-    (savedProvider !== null && provider !== savedProvider);
+    config !== null &&
+    (speakingStyle !== config.speaking_style ||
+      faceEnabled !== faceWindowEnabled(config.face_enabled) ||
+      transcriptCache !== (config.transcript_cache === true) ||
+      provider !== chatProvider(config.provider));
 
   return (
     <div className="settings-pane">
@@ -110,7 +95,7 @@ export function SettingsPane() {
           }}
           placeholder="例: 関西弁で、絵文字は使わずに"
           rows={4}
-          disabled={loadState.kind !== "ready"}
+          disabled={!ready}
         />
       </label>
       <p className="settings-note">
@@ -121,12 +106,12 @@ export function SettingsPane() {
         <span className="settings-field-label">チャットのProvider</span>
         <select
           className="settings-select"
-          value={provider ?? "auto"}
+          value={provider}
           onChange={(event) => {
             setProvider(event.target.value);
             setSaveState({ kind: "idle" });
           }}
-          disabled={provider === null}
+          disabled={!ready}
         >
           {PROVIDERS.map((p) => (
             <option key={p} value={p}>
@@ -136,18 +121,19 @@ export function SettingsPane() {
         </select>
       </label>
       <p className="settings-note">
-        auto はTomoが経験から選ぶ（既定）。反映は次のチャット（New chatで区切った後）から
+        auto はTomoが経験から選ぶ（既定）。反映は次のチャット（New chatで区切った後）から。
+        チャット下部の作業バーで足した読み取り先が効くのは claude-code のときだけ
       </p>
 
       <label className="settings-checkbox-field">
         <input
           type="checkbox"
-          checked={faceEnabled ?? false}
+          checked={faceEnabled}
           onChange={(event) => {
             setFaceEnabled(event.target.checked);
             setSaveState({ kind: "idle" });
           }}
-          disabled={faceEnabled === null}
+          disabled={!ready}
         />
         <span>顔窓を開く</span>
       </label>
@@ -156,12 +142,12 @@ export function SettingsPane() {
       <label className="settings-checkbox-field">
         <input
           type="checkbox"
-          checked={transcriptCache ?? false}
+          checked={transcriptCache}
           onChange={(event) => {
             setTranscriptCache(event.target.checked);
             setSaveState({ kind: "idle" });
           }}
-          disabled={transcriptCache === null}
+          disabled={!ready}
         />
         <span>会話の全文を残す</span>
       </label>
@@ -171,17 +157,17 @@ export function SettingsPane() {
         OFFに戻しても既に保存した分は残る。端末の忘却（forget --session）で消したセッションは、GUIも次回起動/区切りで追随して消す
       </p>
 
-      {loadState.kind === "loading" && <p className="settings-status">読み込み中…</p>}
-      {loadState.kind === "error" && (
+      {!ready && loadError === null && <p className="settings-status">読み込み中…</p>}
+      {loadError !== null && (
         <p className="settings-status settings-status--error">
-          {loadState.message}{" "}
-          <button className="settings-retry-btn" onClick={() => void load()}>
+          {loadError}{" "}
+          <button className="settings-retry-btn" onClick={onReload}>
             再読み込み
           </button>
         </p>
       )}
 
-      {loadState.kind === "ready" && (
+      {ready && (
         <div className="settings-actions">
           <button className="settings-save-btn" onClick={() => void handleSave()} disabled={!dirty}>
             保存

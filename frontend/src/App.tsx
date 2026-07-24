@@ -4,9 +4,18 @@ import { Sidebar } from "./components/Sidebar";
 import { GrowthDisclosure } from "./components/GrowthDisclosure";
 import { ChatPane } from "./components/ChatPane";
 import { SettingsPane } from "./components/SettingsPane";
+import { WorkspaceBar } from "./components/WorkspaceBar";
 import { MemoryPane } from "./components/MemoryPane";
 import { SessionPane } from "./components/SessionPane";
-import { EndTask, GetSessions, GetTomoStatus, SendLine } from "../wailsjs/go/main/App";
+import {
+  EndTask,
+  GetGUIConfig,
+  GetSessions,
+  GetTomoStatus,
+  SaveGUIConfig,
+  SendLine,
+  SetWorkspace,
+} from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { main } from "../wailsjs/go/models";
 import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from "./types";
@@ -49,6 +58,14 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
+  // gui.json の唯一のコピー (ADR-0004 Consequences): 設定ペインと作業バーの
+  // 2つの口が同じファイルを書くので、各画面が自前で読んだ古い写しから保存
+  // すると片方の変更が消える。保存は必ずこの1つへマージしてから書く。
+  // 保存の直後に別の保存が来ても最新を見られるよう ref も持つ（state は
+  // 再描画用 — 二重管理は applyGUIConfig に閉じ込める）。
+  const [guiConfig, setGuiConfig] = useState<main.GUIConfig | null>(null);
+  const guiConfigRef = useRef<main.GUIConfig | null>(null);
+  const [guiConfigError, setGuiConfigError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<main.SessionDigest[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   // 初回読み込み中だけ立てる（以後の再読み込みは既存の一覧を見せたまま裏で
@@ -88,6 +105,32 @@ function App() {
     setBoundaryActive(v);
   }
 
+  function applyGUIConfig(c: main.GUIConfig) {
+    guiConfigRef.current = c;
+    setGuiConfig(c);
+  }
+
+  async function loadGUIConfig() {
+    try {
+      applyGUIConfig(await GetGUIConfig());
+      setGuiConfigError(null);
+    } catch (err) {
+      setGuiConfigError(`読み込みに失敗: ${errorMessage(err)}`);
+    }
+  }
+
+  // 部分更新を今の設定へマージして保存する。呼び出し側は自分が触った項目だけを
+  // 渡し、触っていない項目（他の画面が直前に変えたかもしれない値）は保たれる。
+  async function saveGUIConfigPatch(patch: Partial<main.GUIConfig>) {
+    const base = guiConfigRef.current;
+    if (base === null) {
+      throw new Error("設定がまだ読めていない");
+    }
+    const next = { ...base, ...patch } as main.GUIConfig;
+    await SaveGUIConfig(next);
+    applyGUIConfig(next);
+  }
+
   // ヘッダのステージとセッション一覧は台帳のView。読み直すのは起動時と
   // プロセス終了時（= セッション境界 — 記帳・知覚が走りステージも一覧も
   // 動きうる瞬間）だけ: ポーリングはしない（低負荷、ADR-0001 Decision 3 と
@@ -115,6 +158,7 @@ function App() {
 
   useEffect(() => {
     void refreshLedgerViews();
+    void loadGUIConfig();
     const offView = EventsOn("chat:view", (data: unknown) => {
       handleViewEvent(data);
     });
@@ -341,6 +385,26 @@ function App() {
     void sendLine(trimmed);
   }
 
+  // 作業バーの変更は即保存する（設定ペインのような保存ボタンは置かない —
+  // フォルダを選ぶ操作そのものが確定の意思表示）。保存と同時に走行中のチャットへ
+  // 宣言が飛ぶ (ADR-0004 改訂 Decision 3)。効き始めの言葉はここでは足さない:
+  // 受け取ったかどうかは本体が答え、その返事は view ストリームでこの同じログに
+  // 出る（タスクの途中なら「/new で区切ってから」と本体が言う）。
+  function handleWorkspaceChange(workingDir: string, readDirs: string[]) {
+    void SetWorkspace(workingDir, readDirs)
+      .then((update) => {
+        applyGUIConfig(update.config);
+        if (update.pending) {
+          // 走行中のタスクには届いていない。バーの見た目だけ変わって Tomo は
+          // 前の場所のまま、という食い違いを黙って作らない。
+          appendSystem("働く場所を保存した — 今のタスクには効かない。New chat で区切った後から");
+        }
+      })
+      .catch((err: unknown) => {
+        appendSystem(`働く場所の保存に失敗: ${errorMessage(err)}`);
+      });
+  }
+
   function handleSelectSession(sessionID: string) {
     setSelectedSession(sessionID);
     setActivePane("session");
@@ -398,10 +462,27 @@ function App() {
             データロス）。メモリと過去セッションは意図的に毎回マウントし直す —
             開くたびに台帳の最新を読み直す方が、黙って古いViewを見せるより正しい */}
         <div style={{ display: activePane === "chat" ? "contents" : "none" }}>
-          <ChatPane messages={messages} onSend={handleSend} allowEmptySend={boundaryActive} />
+          <ChatPane
+            messages={messages}
+            onSend={handleSend}
+            allowEmptySend={boundaryActive}
+            workspace={
+              <WorkspaceBar
+                workingDir={guiConfig === null ? null : (guiConfig.working_dir ?? "")}
+                readDirs={guiConfig?.read_dirs ?? []}
+                onChange={handleWorkspaceChange}
+                onError={appendSystem}
+              />
+            }
+          />
         </div>
         <div style={{ display: activePane === "settings" ? "contents" : "none" }}>
-          <SettingsPane />
+          <SettingsPane
+            config={guiConfig}
+            loadError={guiConfigError}
+            onReload={() => void loadGUIConfig()}
+            onSave={saveGUIConfigPatch}
+          />
         </div>
         {activePane === "memory" && <MemoryPane tomoStatus={tomoStatus} />}
         {activePane === "session" && selectedSession !== null && (

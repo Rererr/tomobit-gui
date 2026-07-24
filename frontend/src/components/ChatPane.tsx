@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { ChatMessage } from "../types";
 import { MessageView } from "./ChatMessageView";
 
@@ -10,13 +10,16 @@ interface ChatPaneProps {
   // 言えない」をキーボード以外でも実行できるようにする（入力欄の無効化は
   // 質問への回答経路を塞ぐので不可）。
   allowEmptySend: boolean;
+  // ログと入力欄の間に敷く作業バー (ADR-0004 Decision 4)。配置だけが
+  // ChatPane の責務で、中身（設定の読み書き）は親が持つ。
+  workspace: ReactNode;
 }
 
 // 最下部からこの距離(px)以内なら「追従中」とみなす。ピクセル単位の丸め誤差を
 // 吸収する程度の遊び。
 const STICK_TO_BOTTOM_THRESHOLD_PX = 80;
 
-export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
+export function ChatPane({ messages, onSend, allowEmptySend, workspace }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const [stickToBottom, setStickToBottom] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,8 @@ export function ChatPane({ messages, onSend, allowEmptySend }: ChatPaneProps) {
           ↓ 最新へ
         </button>
       )}
+
+      {workspace}
 
       <div className="chat-input-bar">
         <textarea

@@ -64,6 +64,66 @@ func (a *App) SaveGUIConfig(c GUIConfig) error {
 	return nil
 }
 
+// WorkspaceUpdate is SetWorkspace's answer: the config as it now stands on
+// disk, plus whether the running chat took the new places or they wait for the
+// next task boundary.
+type WorkspaceUpdate struct {
+	Config GUIConfig `json:"config"`
+	// Pending is true when a task was open, so the declaration was not sent —
+	// the places are saved and take effect at the next boundary (New chat).
+	Pending bool `json:"pending"`
+}
+
+// SetWorkspace persists the places Tomo works and, when a chat is running
+// between tasks, declares them to it right away (ADR-0004 改訂 Decision 3 /
+// 本体 ADR-0047 Decision 4 の /cd・/add-dir): 反映を次のプロセスまで待たせない。
+//
+// ディスクの現行 gui.json を読んでから2項目だけ差し替えるのは、設定ペインと
+// この口が同じファイルを書くため — 呼び出し側が持っていた古い写しで喋り方や
+// Provider を巻き戻さない。返す Config が画面の新しい真実になる。
+//
+// タスクが開いている間は宣言を送らない。送っても本体は「/new で区切ってから」
+// と断るだけで、宣言の行数ぶん断り文句が会話面に並ぶ（実機で確認）。境界の
+// 規律は本体のもののままで、GUI は「開いているか」という観測事実だけを見て
+// 黙り、代わりに Pending を返して画面に一言言わせる。
+func (a *App) SetWorkspace(workingDir string, readDirs []string) (WorkspaceUpdate, error) {
+	c, err := loadGUIConfig()
+	if err != nil {
+		return WorkspaceUpdate{}, fmt.Errorf("設定の読み込みに失敗: %w", err)
+	}
+	c.WorkingDir = workingDir
+	c.ReadDirs = readDirs
+	if err := saveGUIConfig(c); err != nil {
+		return WorkspaceUpdate{}, fmt.Errorf("設定の保存に失敗: %w", err)
+	}
+	a.mu.Lock()
+	a.guiConfig = c
+	p := a.proc
+	a.mu.Unlock()
+	if p == nil {
+		// 走っていなければ宣言する相手がいない。次の起動が argv で持っていく。
+		return WorkspaceUpdate{Config: c}, nil
+	}
+	if p.isTaskOpen() {
+		return WorkspaceUpdate{Config: c, Pending: true}, nil
+	}
+	if err := p.write(workspaceDeclaration(c.WorkingDir, c.NormalizedReadDirs())); err != nil {
+		return WorkspaceUpdate{Config: c, Pending: true}, fmt.Errorf("保存はできたが、走行中のチャットへ伝えられなかった: %w", err)
+	}
+	return WorkspaceUpdate{Config: c}, nil
+}
+
+// ChooseDirectory opens the OS folder picker and returns the chosen absolute
+// path, or "" when the person cancels (ADR-0004 Decision 4: パスの手入力欄は
+// 持たない — 存在しないパスという検証の面倒を初めから作らない)。startAt は
+// ダイアログの初期位置で、空なら OS の既定に任せる。
+func (a *App) ChooseDirectory(title, startAt string) (string, error) {
+	return wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:            title,
+		DefaultDirectory: startAt,
+	})
+}
+
 // emitEvent forwards to emit unless the app is shutting down — the drain that
 // runs while the window closes has no frontend left to paint on.
 func (a *App) emitEvent(name string, data ...interface{}) {

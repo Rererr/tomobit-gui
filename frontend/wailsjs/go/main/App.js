@@ -6,6 +6,10 @@ export function AmendExperience(arg1) {
   return window['go']['main']['App']['AmendExperience'](arg1);
 }
 
+export function ChooseDirectory(arg1, arg2) {
+  return window['go']['main']['App']['ChooseDirectory'](arg1, arg2);
+}
+
 export function EndTask() {
   return window['go']['main']['App']['EndTask']();
 }
@@ -44,4 +48,8 @@ export function SaveGUIConfig(arg1) {
 
 export function SendLine(arg1) {
   return window['go']['main']['App']['SendLine'](arg1);
+}
+
+export function SetWorkspace(arg1, arg2) {
+  return window['go']['main']['App']['SetWorkspace'](arg1, arg2);
 }

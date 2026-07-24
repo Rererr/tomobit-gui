@@ -122,6 +122,52 @@ func TestGUIConfig_ChatProvider_明示の選択はそのまま通る(t *testing.
 	}
 }
 
+// ADR-0004: 作業ディレクトリと読み取り先も gui.json に往復する。キー無しの
+// 既存 gui.json は「未設定＝継承」「読み取り先なし」として読める。
+func TestGUIConfig_Workspace_RoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "gui.json")
+	want := GUIConfig{WorkingDir: "/Users/example/personal-dev/tomobit", ReadDirs: []string{"/Users/example/notes", "/tmp/shared"}}
+	if err := saveGUIConfigFile(p, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadGUIConfigFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WorkingDir != want.WorkingDir {
+		t.Errorf("round trip working_dir = %q, want %q", got.WorkingDir, want.WorkingDir)
+	}
+	if strings.Join(got.NormalizedReadDirs(), "|") != strings.Join(want.ReadDirs, "|") {
+		t.Errorf("round trip read_dirs = %v, want %v", got.ReadDirs, want.ReadDirs)
+	}
+}
+
+func TestGUIConfig_Workspace_キー無しJSONは未設定として読める(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(p, []byte(`{"speaking_style":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadGUIConfigFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkingDir != "" {
+		t.Errorf("キー無しの working_dir = %q, want 空（継承）", c.WorkingDir)
+	}
+	if len(c.NormalizedReadDirs()) != 0 {
+		t.Errorf("キー無しの read_dirs = %v, want 空", c.NormalizedReadDirs())
+	}
+}
+
+func TestGUIConfig_NormalizedReadDirs_空と重複を落とし順序は保つ(t *testing.T) {
+	c := GUIConfig{ReadDirs: []string{"/b", "", "  ", "/a", "/b", " /a "}}
+	got := c.NormalizedReadDirs()
+	want := []string{"/b", "/a"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("NormalizedReadDirs = %v, want %v", got, want)
+	}
+}
+
 func TestGUIConfig_Provider_RoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "gui.json")
 	if err := saveGUIConfigFile(p, GUIConfig{Provider: "codex"}); err != nil {

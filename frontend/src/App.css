@@ -349,7 +349,8 @@
    引き戻されない代わりの復帰経路（chat-input-barの上に浮かせる） */
 .chat-jump-bottom-btn {
   position: absolute;
-  bottom: 96px;
+  /* 作業バー (ADR-0004) の分だけ底上げ: 入力の器の上に浮かせる高さ */
+  bottom: 136px;
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 14px;
@@ -824,11 +825,101 @@
   overflow-wrap: break-word;
 }
 
+/* ログと入力欄の間の作業バー (ADR-0004 Decision 4): 送る前に「どこで働くか」が
+   見えている状態を作る。入力欄と同じ罫の内側に置き、行は折り返して増える —
+   読み取り先が増えても入力欄を押し出さない（ログ側が縮む）。 */
+.workspace-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px 0;
+  border-top: 1px solid var(--color-bg-raised);
+}
+
+.workspace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-input);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-chip--work {
+  cursor: pointer;
+}
+
+.workspace-chip--work:hover:not(:disabled) {
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+}
+
+.workspace-chip--work:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+.workspace-chip-remove {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: var(--color-text-muted-aa);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.workspace-chip-remove:hover {
+  color: var(--color-text);
+}
+
+.workspace-add-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--color-border);
+  background: none;
+  color: var(--color-text-muted-aa);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.workspace-add-btn:hover:not(:disabled) {
+  border-color: var(--color-border-input);
+  color: var(--color-text);
+}
+
+.workspace-add-btn:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+.workspace-label {
+  color: var(--color-text-muted-aa);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.workspace-note {
+  color: var(--color-text-muted-aa);
+  font-size: 11px;
+}
+
+/* 罫は作業バー側が引く（.workspace-bar の border-top）— 入力欄と作業バーは
+   ひと続きの「入力の器」なので、間に線を挟まない */
 .chat-input-bar {
   display: flex;
   gap: 8px;
-  padding: 16px 24px 24px;
-  border-top: 1px solid var(--color-bg-raised);
+  padding: 12px 24px 24px;
 }
 
 .chat-input {
