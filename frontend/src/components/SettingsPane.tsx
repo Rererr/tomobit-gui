@@ -11,6 +11,17 @@ function faceWindowEnabled(faceEnabled?: boolean): boolean {
   return faceEnabled !== false;
 }
 
+// チャットを走らせるProvider（本体 ADR-0043 Decision 5）。未設定（キー無し）は
+// auto — Go側 GUIConfig.ChatProvider の既定と揃える。
+// selectの選択肢である以上、本体 resolveProvider の語彙をここでも複製せざるを
+// えない（guiconfig.go の ChatProvider コメントが退けた複製と同種）。本体に
+// providerが追加/変更されたら、この配列も揃えて更新すること。
+const PROVIDERS = ["auto", "claude-code", "codex", "human"] as const;
+
+function chatProvider(provider?: string): string {
+  return provider || "auto";
+}
+
 export function SettingsPane() {
   const [speakingStyle, setSpeakingStyle] = useState("");
   const [savedStyle, setSavedStyle] = useState<string | null>(null);
@@ -20,6 +31,9 @@ export function SettingsPane() {
   // （faceWindowEnabled と違い未設定でも ON にしない）。
   const [transcriptCache, setTranscriptCache] = useState<boolean | null>(null);
   const [savedTranscriptCache, setSavedTranscriptCache] = useState<boolean | null>(null);
+  // チャットのProvider（本体 ADR-0043 Decision 5）。既定 auto — Tomoが経験から選ぶ。
+  const [provider, setProvider] = useState<string | null>(null);
+  const [savedProvider, setSavedProvider] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
 
@@ -35,6 +49,9 @@ export function SettingsPane() {
       const cache = config.transcript_cache === true;
       setTranscriptCache(cache);
       setSavedTranscriptCache(cache);
+      const prov = chatProvider(config.provider);
+      setProvider(prov);
+      setSavedProvider(prov);
       setLoadState({ kind: "ready" });
     } catch (err) {
       setLoadState({
@@ -57,10 +74,12 @@ export function SettingsPane() {
         speaking_style: speakingStyle,
         face_enabled: faceEnabled ?? true,
         transcript_cache: transcriptCache ?? false,
+        provider: provider ?? "auto",
       });
       setSavedStyle(speakingStyle);
       setSavedFaceEnabled(faceEnabled);
       setSavedTranscriptCache(transcriptCache);
+      setSavedProvider(provider);
       setSaveState({ kind: "saved" });
     } catch (err) {
       setSaveState({
@@ -73,7 +92,8 @@ export function SettingsPane() {
   const dirty =
     (savedStyle !== null && speakingStyle !== savedStyle) ||
     (savedFaceEnabled !== null && faceEnabled !== savedFaceEnabled) ||
-    (savedTranscriptCache !== null && transcriptCache !== savedTranscriptCache);
+    (savedTranscriptCache !== null && transcriptCache !== savedTranscriptCache) ||
+    (savedProvider !== null && provider !== savedProvider);
 
   return (
     <div className="settings-pane">
@@ -95,6 +115,28 @@ export function SettingsPane() {
       </label>
       <p className="settings-note">
         システムプロンプトに追記される — 会話の台帳（記録）には載らない
+      </p>
+
+      <label className="settings-field settings-provider-field">
+        <span className="settings-field-label">チャットのProvider</span>
+        <select
+          className="settings-select"
+          value={provider ?? "auto"}
+          onChange={(event) => {
+            setProvider(event.target.value);
+            setSaveState({ kind: "idle" });
+          }}
+          disabled={provider === null}
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="settings-note">
+        auto はTomoが経験から選ぶ（既定）。反映は次のチャット（New chatで区切った後）から
       </p>
 
       <label className="settings-checkbox-field">

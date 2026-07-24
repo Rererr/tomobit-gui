@@ -825,6 +825,26 @@
   font-size: 12px;
 }
 
+.settings-provider-field {
+  margin-top: 20px;
+}
+
+.settings-select {
+  align-self: flex-start;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-input);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.settings-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
 .settings-checkbox-field {
   display: flex;
   align-items: center;

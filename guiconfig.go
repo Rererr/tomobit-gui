@@ -27,6 +27,27 @@ type GUIConfig struct {
 	// 機微の永続は同意ゲートの向こう側なので、人が明示 true を入れるまで
 	// 1バイトも書かない（既存 gui.json にキーが無いのが安全側の初期状態）。
 	TranscriptCache *bool `json:"transcript_cache,omitempty"`
+
+	// Provider はチャット子プロセスへ渡す --provider（本体 ADR-0043 Decision 5）。
+	// FaceEnabled らと同じ「キー無し＝既定」の流儀だが、string は "" 自体が
+	// 「未設定」を表せるためポインタは要らない。未設定＝auto — 解決は
+	// ChatProvider() が行い、起動 argv には常に明示で積む（本体の既定が将来
+	// 動いても GUI の挙動が無言で変わらないため）。
+	Provider string `json:"provider,omitempty"`
+}
+
+// ChatProvider resolves the provider choice for the chat launch (本体
+// ADR-0043 Decision 5): the saved name, or "auto" when unset. 検証はしない —
+// 名前の正否は本体 resolveProvider が起動時に意味のあるエラーで答える側で、
+// GUI が語彙を複製すると本体への追随漏れが黙ったバグになる。
+// ただし frontend/src/components/SettingsPane.tsx の PROVIDERS だけは
+// select の選択肢として複製せざるを得ない — 本体に provider が追加/変更
+// されたら、そちらも揃えて更新すること。
+func (c GUIConfig) ChatProvider() string {
+	if c.Provider == "" {
+		return "auto"
+	}
+	return c.Provider
 }
 
 // FaceWindowEnabled resolves the tri-state (unset/ON/explicit OFF) to the

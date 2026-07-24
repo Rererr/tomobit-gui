@@ -95,3 +95,43 @@ func TestGUIConfig_FaceEnabled_明示trueはON(t *testing.T) {
 		t.Errorf("明示 true は ON であるべき: %+v", c)
 	}
 }
+
+// 本体 ADR-0043 Decision 5: 未設定（キー無し・空文字）は auto。既存の
+// gui.json にキーが無くても、チャットは明示 --provider auto で立つ。
+func TestGUIConfig_ChatProvider_未設定はauto(t *testing.T) {
+	if got := (GUIConfig{}).ChatProvider(); got != "auto" {
+		t.Errorf("unset provider = %q, want auto", got)
+	}
+	p := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(p, []byte(`{"speaking_style":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadGUIConfigFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.ChatProvider(); got != "auto" {
+		t.Errorf("キー無しJSON の provider = %q, want auto", got)
+	}
+}
+
+func TestGUIConfig_ChatProvider_明示の選択はそのまま通る(t *testing.T) {
+	c := GUIConfig{Provider: "claude-code"}
+	if got := c.ChatProvider(); got != "claude-code" {
+		t.Errorf("provider = %q, want claude-code", got)
+	}
+}
+
+func TestGUIConfig_Provider_RoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "gui.json")
+	if err := saveGUIConfigFile(p, GUIConfig{Provider: "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadGUIConfigFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != "codex" {
+		t.Errorf("round trip provider = %q, want codex", got.Provider)
+	}
+}

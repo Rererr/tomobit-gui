@@ -174,6 +174,15 @@ func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingA
 	return env
 }
 
+// composeChatArgs builds the child chat's argv (本体 ADR-0043 Decision 5)。
+// composeChatEnv と同じ「合成は純関数へ切り出す」パターン。--provider は
+// 常に明示で積む: 未設定を無指定で流すと本体の既定に黙って乗ることになり、
+// 既定が変わったとき GUI の挙動が無言で変わる — Decision 5 が塞ぐ不正直さ
+// そのもの。未設定の解決（=auto）は GUIConfig.ChatProvider が持つ。
+func composeChatArgs(provider string) []string {
+	return []string{"chat", "--view", "ndjson", "--provider", provider}
+}
+
 // findTomobit looks on PATH first, then in ~/go/bin — a Finder-launched .app
 // inherits the loginwindow PATH, which lacks the go install dir the CLI
 // usually lives in.
@@ -203,7 +212,9 @@ func (a *App) chatEnv() []string {
 	return composeChatEnv(os.Environ(), a.guiConfig.SpeakingStyle, faceSet, existing, a.guiConfig.FaceWindowEnabled())
 }
 
-// ensureProcLocked spawns `tomobit chat --view ndjson` if none is running.
+// ensureProcLocked spawns `tomobit chat --view ndjson --provider <choice>`
+// if none is running (provider は gui.json の選択、未設定は auto — 本体
+// ADR-0043 Decision 5)。
 // Caller holds a.mu. view ストリームで stdout が全量 NDJSON になり、ターン終端が
 // 機械可読になる（本体 ADR-0032 Decision 1）。顔窓のオプトイン（TOMOBIT_FACE=1）は
 // 同 Decision 3 で pipe 起動でも効くようになった — env 合成は composeChatEnv に
@@ -216,7 +227,7 @@ func (a *App) ensureProcLocked() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(bin, "chat", "--view", "ndjson")
+	cmd := exec.Command(bin, composeChatArgs(a.guiConfig.ChatProvider())...)
 	// 喋り方 (ADR-0001 Decision 4) と顔窓 (ADR-0032 Decision 3) を子 env に積む。
 	cmd.Env = a.chatEnv()
 	stdin, err := cmd.StdinPipe()

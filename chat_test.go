@@ -329,3 +329,28 @@ func TestFindTomobit_PATHになければgoのbinへフォールバックし両�
 		t.Errorf("PATH優先が効かない: %v %v", p, err)
 	}
 }
+
+// 本体 ADR-0043 Decision 5: --provider は常に明示で積む。未指定で本体の既定に
+// 乗ると、既定が変わったとき GUI の挙動が無言で変わる。
+func TestComposeChatArgs_Providerを常に明示で積む(t *testing.T) {
+	got := composeChatArgs("codex")
+	want := []string{"chat", "--view", "ndjson", "--provider", "codex"}
+	if len(got) != len(want) {
+		t.Fatalf("args = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("args = %v, want %v", got, want)
+		}
+	}
+}
+
+// chatEnv と同型の配線テスト: ensureProcLocked が guiConfig の選択（未設定=auto）
+// を composeChatArgs へ渡すこと自体は子プロセス起動なしに見えないため、解決側
+// （ChatProvider）と合成側（composeChatArgs）の合流をここで固定する。
+func TestComposeChatArgs_未設定のguiConfigはautoになる(t *testing.T) {
+	got := composeChatArgs(GUIConfig{}.ChatProvider())
+	if got[len(got)-2] != "--provider" || got[len(got)-1] != "auto" {
+		t.Errorf("args = %v, want trailing --provider auto", got)
+	}
+}

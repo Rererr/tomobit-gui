@@ -37,6 +37,10 @@ func TestE2E_実Providerへの1ターンがviewストリームで届き区切り
 	exited := make(chan ExitInfo, 1)
 
 	app := NewApp()
+	// Provider は明示で claude-code（本体 ADR-0043 Decision 5）: このテストの意図は
+	// 「本体と繋がるか」であって「誰が選ばれるか」ではない。auto のまま走らせると
+	// 空台帳のくじで human を引いて無限待ちしうる。
+	app.guiConfig = GUIConfig{Provider: "claude-code"}
 	app.emit = func(name string, data ...interface{}) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -146,7 +150,8 @@ func TestE2E_transcript_cache_ONで実viewストリームが全文追記され�
 	var sawText bool
 	app := NewApp()
 	on := true
-	app.guiConfig = GUIConfig{TranscriptCache: &on}
+	// Provider 明示は上のE2Eと同じ理由（本体 ADR-0043 Decision 5）。
+	app.guiConfig = GUIConfig{TranscriptCache: &on, Provider: "claude-code"}
 	app.emit = func(name string, data ...interface{}) {
 		mu.Lock()
 		defer mu.Unlock()

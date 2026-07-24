@@ -73,6 +73,12 @@ Tomoの発言（LLMの生出力）がMarkdown記法のまま表示されてい�
 そのまま使う。**既定はclaude-code（= Claude）**。モデルはclaude CLI側の設定に
 従い、GUIは固定しない（Providerの`/provider`切替・autoの台帳采配もそのまま効く）。
 
+> **改版（本体 ADR-0043 Decision 5・2026-07-24）**: 「既定はclaude-code」は
+> 置換された — GUIは `gui.json` の `provider` としてProviderを明示的に持ち、
+> **未設定＝auto**（Tomoが経験から選ぶ）。起動 argv には常に明示の
+> `--provider` を積むので、本体の既定が動いてもGUIの挙動が無言で変わることは
+> ない。設定画面（claude-code / codex / human / auto）で選べる。
+
 - **Anthropic API (SDK) 直結を却下した理由**:
   1. chat→台帳の器官一式（記帳・ダイジェスト・区切りの尾部）を再実装する
      二重帳簿になる — ADR-0001の却下理由と同根で、これが最重
