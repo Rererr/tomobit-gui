@@ -95,6 +95,33 @@ func TestGetTomoStatus_未知フィールドは無視して既知フィールド
 	}
 }
 
+func TestGetTomoStatus_providersフィールドをそのままデコードする(t *testing.T) {
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":4,"stage_name":"おとな","providers":[{"provider":"claude-code","runs":41,"first_ts":1000,"last_ts":2000,"success":0.9,"scored":41}]}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Providers) != 1 {
+		t.Fatalf("providers = %+v, want 1 row", status.Providers)
+	}
+	got := status.Providers[0]
+	if got.Provider != "claude-code" || got.Runs != 41 || got.Success != 0.9 || got.Scored != 41 {
+		t.Errorf("providers[0] = %+v, want provider=claude-code runs=41 success=0.9 scored=41", got)
+	}
+}
+
+func TestGetTomoStatus_providers欠落はnilにデコードされる(t *testing.T) {
+	// 旧本体(このフィールドを知らない版)・利用実績が無いケース(本体omitempty)の両方を模す。
+	withFakeTomobit(t, `echo '{"type":"status","exists":true,"stage":2,"stage_name":"こども"}'`)
+	status, err := NewApp().GetTomoStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Providers != nil {
+		t.Errorf("status.Providers = %+v, want nil", status.Providers)
+	}
+}
+
 func TestGetTomoStatus_不正JSONは握り潰さずエラーを返す(t *testing.T) {
 	withFakeTomobit(t, `echo 'not json'`)
 	if _, err := NewApp().GetTomoStatus(); err == nil {

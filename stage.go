@@ -17,17 +17,30 @@ import (
 // ポインタ/ゼロ値許容とし、旧本体(このviewを知らない版)のデコードでも
 // 前方互換契約(本体ADR-0032 Decision 1)を保つ。
 type TomoStatus struct {
-	Exists    bool   `json:"exists"`
-	Stage     int    `json:"stage"`
-	StageName string `json:"stage_name"`
-	Mood      *Mood  `json:"mood,omitempty"`
-	Speak     string `json:"speak,omitempty"`
+	Exists    bool            `json:"exists"`
+	Stage     int             `json:"stage"`
+	StageName string          `json:"stage_name"`
+	Mood      *Mood           `json:"mood,omitempty"`
+	Speak     string          `json:"speak,omitempty"`
+	Providers []ProviderUsage `json:"providers,omitempty"`
 }
 
 // Mood is voice.Suggest の記号 — Marker は「!」「?」「z」等1文字で空文字もありうる。
 type Mood struct {
 	Name   string `json:"name"`
 	Marker string `json:"marker"`
+}
+
+// ProviderUsage is one Provider の利用実績行(本体の同名View、cmd/tomobit/
+// provider_usage.go)。集計は本体だけが担う(本体Decision 1) — ここは
+// デコードするだけで、GUI側では一切再計算しない。
+type ProviderUsage struct {
+	Provider string  `json:"provider"`
+	Runs     int     `json:"runs"`
+	FirstTS  int64   `json:"first_ts"`
+	LastTS   int64   `json:"last_ts"`
+	Success  float64 `json:"success"`
+	Scored   int     `json:"scored"`
 }
 
 // GetTomoStatus asks the body for its own view of the ledger — the same

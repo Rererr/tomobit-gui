@@ -116,6 +116,7 @@ export namespace main {
 	    speaking_style: string;
 	    face_enabled?: boolean;
 	    transcript_cache?: boolean;
+	    provider?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIConfig(source);
@@ -126,6 +127,7 @@ export namespace main {
 	        this.speaking_style = source["speaking_style"];
 	        this.face_enabled = source["face_enabled"];
 	        this.transcript_cache = source["transcript_cache"];
+	        this.provider = source["provider"];
 	    }
 	}
 	export class MemoryView {
@@ -178,6 +180,28 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.marker = source["marker"];
+	    }
+	}
+	export class ProviderUsage {
+	    provider: string;
+	    runs: number;
+	    first_ts: number;
+	    last_ts: number;
+	    success: number;
+	    scored: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.runs = source["runs"];
+	        this.first_ts = source["first_ts"];
+	        this.last_ts = source["last_ts"];
+	        this.success = source["success"];
+	        this.scored = source["scored"];
 	    }
 	}
 	export class SessionDetail {
@@ -292,6 +316,7 @@ export namespace main {
 	    stage_name: string;
 	    mood?: Mood;
 	    speak?: string;
+	    providers?: ProviderUsage[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TomoStatus(source);
@@ -304,6 +329,7 @@ export namespace main {
 	        this.stage_name = source["stage_name"];
 	        this.mood = this.convertValues(source["mood"], Mood);
 	        this.speak = source["speak"];
+	        this.providers = this.convertValues(source["providers"], ProviderUsage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

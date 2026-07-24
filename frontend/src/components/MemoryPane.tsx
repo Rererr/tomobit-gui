@@ -19,6 +19,34 @@ function formatDate(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
+// formatRelativeTime は Provider別利用サマリの「最終利用」だけが要る簡便な
+// 相対表記 — 経験一覧は絶対時刻(formatDate)のまま揃えているので、こちらは
+// 独立した小さい関数にする。
+function formatRelativeTime(ms: number): string {
+  if (ms <= 0) {
+    return "-";
+  }
+  const diff = Date.now() - ms;
+  if (diff < 60_000) {
+    return "たった今";
+  }
+  if (diff < 3_600_000) {
+    return `${Math.floor(diff / 60_000)}分前`;
+  }
+  if (diff < 86_400_000) {
+    return `${Math.floor(diff / 3_600_000)}時間前`;
+  }
+  return `${Math.floor(diff / 86_400_000)}日前`;
+}
+
+// providerUsageDetail は1行のProvider利用実績を「回数・成功率・最終利用」に
+// 圧縮する。scored=0(結果の信号が読めた実行が無い)は成功率を「-」にする —
+// 母数0の平均を出すと0%の失敗と見分けが付かない。
+function providerUsageDetail(p: main.ProviderUsage): string {
+  const successText = p.scored > 0 ? `成功率 ${Math.round(p.success * 100)}%` : "成功率 -";
+  return `${p.runs}回 ・ ${successText} ・ 最終 ${formatRelativeTime(p.last_ts)}`;
+}
+
 // formatKV flattens a JSON object's own keys into "k=v" pairs — enough of a
 // gist for context/payload blobs whose shape varies by kind/signal (SCHEMA.md
 // D7); the raw text is shown as a fallback if it is not an object.
@@ -128,7 +156,17 @@ function sectionCount(matched: number, total: number): string {
   return `${matched}/${total}件`;
 }
 
-export function MemoryPane() {
+interface MemoryPaneProps {
+  // Provider別の利用は本体status --view jsonの追加フィールド(補助的なサマリ)。
+  // App.tsxのヘッダが既に取得済みのTomoStatusをpropsで受け取る — ここで
+  // GetTomoStatusを再度呼ぶと、開くたびに `tomobit status --view json` の
+  // 子プロセスが二重起動する。取得に失敗していれば tomoStatus は null で、
+  // その場合はProvider別の利用セクションだけを省く（ヘッダの局所劣化
+  // ＝App.tsx refreshLedgerViewsと同じ姿勢— 経験一覧の表示は妨げない）。
+  tomoStatus: main.TomoStatus | null;
+}
+
+export function MemoryPane({ tomoStatus }: MemoryPaneProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [action, setAction] = useState<RowAction | null>(null);
   const [writeStatus, setWriteStatus] = useState<{ ok: boolean; text: string } | null>(null);
@@ -316,8 +354,24 @@ export function MemoryPane() {
             ? sectionCount(filteredCuriosity.length, state.view.curiosity.length)
             : null;
 
+        const providerUsage = tomoStatus?.providers ?? [];
+
         return (
         <>
+          {providerUsage.length > 0 && (
+            <section className="memory-section memory-provider-usage">
+              <h3>Provider別の利用</h3>
+              <ul className="memory-list">
+                {providerUsage.map((p) => (
+                  <li key={p.provider} className="memory-item">
+                    <div className="memory-item-title">{p.provider}</div>
+                    <div className="memory-item-detail">{providerUsageDetail(p)}</div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <div className="memory-filter-bar">
             <label className="memory-filter-label" htmlFor="memory-search-input">
               検索
