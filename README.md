@@ -18,6 +18,8 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
 - Tomoが働く場所の設定（チャットのログと入力欄の間の作業バー。端末の `cd` にあたる
   表明で、Providerによらず効く（本体ADR-0047）。走行中のチャットにもその場で届く —
   ただしタスクの途中なら本体が「/new で区切ってから」と答える）
+- 窓を閉じる前の締め（×は即座には閉じず、本体の境界の器官——Feedback→知覚→質問→鏡——を
+  走らせる。質問はポップアップのボタンで答える。ADR-0005）
 
 ユーザープロフィール機能は持たない。
 
@@ -77,6 +79,7 @@ open build/bin/tomobit-gui.app     # wails build の .app から
 - [ADR-0002](docs/decisions/ADR-0002-tech-stack.md) — 技術スタック（Wails v2 / React + TypeScript strict / LLMは既存Provider経路=claude-code既定・API直結却下）
 - [ADR-0003](docs/decisions/ADR-0003-session-transcript-cache.md) — 過去セッションの表示=スクロールバックの永続化（viewストリーム素通し追記・忘却より長生きしない・上限つき / **オプトイン・既定OFF**で先行実装 — 有効化するまで1バイトも書かない。既定の是非は所有者の裁定待ち）
 - [ADR-0004](docs/decisions/ADR-0004-workspace-scope.md) — Tomoが働く場所（作業ディレクトリ=chat子プロセスのcwd / 読み取り先は本体の`/add-dir`へ宣言=Provider非依存 / 置き場はログと入力欄の間 / 反映は走行中のチャットにも届く。Decision 2/3 は本体ADR-0047を受けて改訂）
+- [ADR-0005](docs/decisions/ADR-0005-closing-boundary.md) — 窓を閉じる前の締め（×で15秒固まっていたのは本体が境界の器官を走らせている時間だった / `OnBeforeClose` で閉窓を差し止め New chat と同じ `/exit` を送り、`await` の note をボタン化したモーダルで答える。選択肢は本体の行から読む＝GUIは語彙を持たない / 降りる道は「待たずに閉じる」1つで、そこでは猶予も捨てる）
 - [BACKLOG](docs/BACKLOG.md) — 残課題（本体側の設計待ち / GUI側の未実装）
 
 ## Stack

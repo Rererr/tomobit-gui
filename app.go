@@ -22,6 +22,14 @@ type App struct {
 	proc      *chatProc
 	stopping  bool
 	guiConfig GUIConfig
+	// closingBoundary は「窓の×で区切りを走らせている最中」(ADR-0005)。
+	// beforeClose が /exit を送って閉窓を差し止めた時に立ち、以後の閉窓要求は
+	// 差し止めずに通す — 答え終わった画面からの Quit も、もう一度押された×も
+	// 同じ「もう待たない」の表明として扱う。
+	closingBoundary bool
+	// abandonBoundary は「待たずに閉じる」と言われたことの記憶。shutdown が
+	// 猶予を飛ばして即座に回収する（AbandonBoundary 参照）。
+	abandonBoundary bool
 }
 
 func NewApp() *App {
@@ -225,20 +233,91 @@ func (a *App) EndTask() (bool, error) {
 	return true, nil
 }
 
+// eventBoundaryClosing tells the frontend the window's × started a boundary
+// and is waiting on it (ADR-0005): the questions arrive on the ordinary
+// chat:view stream, so this carries no payload — it only says which mode the
+// screen is in.
+const eventBoundaryClosing = "app:closing"
+
+// beforeClose runs on the window's × (Wails OnBeforeClose; true = 閉じない).
+// 窓を閉じる前に走る区切り(ADR-0005 Decision 1): 生きている chat があれば
+// New chat と同じ /exit を送って閉窓を差し止め、締めの質問を画面へ出させる。
+// 待たされる15秒の正体（本体が Feedback → 知覚 → 質問 → 鏡 を走らせている）を
+// 凍った窓の裏に隠さず、答えられる形で前に出す。
+//
+// 二度目の×はもう差し止めない: 一度出した器官の前で「もう待たない」と言えるのは
+// 人だけで、GUI がそれを勝手に延長する理由が無い（ForceQuit と同じ結末＝
+// shutdown の猶予つき回収へ落ちる）。
+func (a *App) beforeClose(_ context.Context) bool {
+	a.mu.Lock()
+	p, already := a.proc, a.closingBoundary
+	if p != nil && !already {
+		a.closingBoundary = true
+	}
+	a.mu.Unlock()
+	if p == nil || already {
+		return false
+	}
+	// 送れないなら差し止める理由も無い: 区切りは走らないので、そのまま閉じて
+	// shutdown の回収に任せる（失敗の診断は stderr 面へ — もう読む窓は無いが、
+	// 握り潰すよりは残す）。
+	if err := p.write("/exit\n"); err != nil {
+		a.mu.Lock()
+		a.closingBoundary = false
+		a.mu.Unlock()
+		fmt.Fprintln(os.Stderr, "tomobit-gui: 閉窓時の /exit 送信に失敗:", err)
+		return false
+	}
+	a.emitEvent(eventBoundaryClosing)
+	return true
+}
+
+// QuitNow closes the window for real — called by the screen when the boundary
+// is done (chat:exit が届いた＝待つものが無い)。beforeClose の差し止めは既に
+// 降りている（closingBoundary が立っている）ので、そのまま閉じる。
+func (a *App) QuitNow() {
+	wailsruntime.Quit(a.ctx)
+}
+
+// AbandonBoundary is 「待たずに閉じる」(ADR-0005 Decision 3): the person
+// declined to wait for the organs, so shutdown stops giving them the grace and
+// reaps the child at once. 猶予を残したまま閉じると、答えないと決めた後に
+// 15秒フリーズするという、この設計が直したはずの症状がそのまま戻る。
+//
+// 失うものは正直に言う: 知覚は途中で止まり、そのセッションの task.finished は
+// 記帳されない（猶予切れの Kill で従来から起きていたのと同じ結末）。積み残しは
+// 後から `tomobit perceive` が消化する。
+func (a *App) AbandonBoundary() {
+	a.mu.Lock()
+	a.abandonBoundary = true
+	a.mu.Unlock()
+	wailsruntime.Quit(a.ctx)
+}
+
 // shutdown closes the chat's stdin — the terminal's Ctrl-D: the boundary
 // organs (Feedback は EOF で無信号 → 知覚) run in the body — and waits for the
 // process. One that outlives the grace is killed, then reaped: the app must
 // not hang on quit, and a Kill without the Wait would leak the child.
+//
+// 窓の×の経路では beforeClose が先に /exit を送っており、ここへ来る時点で
+// 区切りは済んでいるか、人が「待たずに閉じる」と言ったかのどちらか。猶予は
+// 後者のための天井として残る（前者では p が既に居ないので即座に返る）。
 func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	a.stopping = true
 	p := a.proc
 	a.proc = nil
+	abandon := a.abandonBoundary
 	a.mu.Unlock()
 	if p == nil {
 		return
 	}
 	p.stdin.Close()
+	if abandon {
+		p.cmd.Process.Kill()
+		<-p.done
+		return
+	}
 	select {
 	case <-p.done:
 	case <-time.After(chatShutdownGrace):

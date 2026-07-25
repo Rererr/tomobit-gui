@@ -29,7 +29,10 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		// 窓の×は即座には閉じない（ADR-0005）: 生きている chat があれば締めの
+		// 器官を走らせ、質問に答えてから閉じる。
+		OnBeforeClose: app.beforeClose,
+		OnShutdown:    app.shutdown,
 		Bind: []interface{}{
 			app,
 		},

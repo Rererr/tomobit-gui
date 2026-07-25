@@ -7,11 +7,14 @@ import { SettingsPane } from "./components/SettingsPane";
 import { WorkspaceBar } from "./components/WorkspaceBar";
 import { MemoryPane } from "./components/MemoryPane";
 import { SessionPane } from "./components/SessionPane";
+import { ClosingDialog } from "./components/ClosingDialog";
 import {
+  AbandonBoundary,
   EndTask,
   GetGUIConfig,
   GetSessions,
   GetTomoStatus,
+  QuitNow,
   SaveGUIConfig,
   SendLine,
   SetWorkspace,
@@ -22,6 +25,8 @@ import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
+import { parseBoundaryQuestion } from "./boundaryChoices";
+import type { BoundaryQuestion } from "./boundaryChoices";
 
 let nextMessageId = 0;
 
@@ -85,6 +90,14 @@ function App() {
   // text/tool/tool_result/error はこの id のターンへ追記する（購読は一度きりなので
   // ref で最新の開き枠を追う）。
   const openTurnIdRef = useRef<string | null>(null);
+  // 窓の×が始めた締め (ADR-0005)。Go の beforeClose が /exit を送って閉窓を
+  // 差し止め、app:closing でこちらへ知らせる。以後 await の note はチャット面
+  // ではなくこのダイアログの問いになり、chat:exit で閉じる。イベント購読は
+  // 一度きり(deps [])なので ref で最新を読み、UI は state で再描画する。
+  const closingRef = useRef(false);
+  const [closing, setClosing] = useState(false);
+  const [closingQuestion, setClosingQuestion] = useState<BoundaryQuestion | null>(null);
+  const [closingNotes, setClosingNotes] = useState<string[]>([]);
   // decided（本体 ADR-0040）は自分の task.started より先に届きうるので、
   // sid が一致するまで一時的に持つ（"最も直近の decided" を仮採用し、
   // sid 不一致なら黙って捨てる — 記帳とGUIの相関はsidだけが正）。
@@ -103,6 +116,11 @@ function App() {
   function setBoundary(v: boolean) {
     boundaryRef.current = v;
     setBoundaryActive(v);
+  }
+
+  function setClosingMode(v: boolean) {
+    closingRef.current = v;
+    setClosing(v);
   }
 
   function applyGUIConfig(c: main.GUIConfig) {
@@ -168,6 +186,12 @@ function App() {
         appendStderr(data.text);
       }
     });
+    // 窓の×が締めを始めた (ADR-0005): 以後 await の note はダイアログの問いへ。
+    const offClosing = EventsOn("app:closing", () => {
+      setClosingMode(true);
+      setClosingQuestion(null);
+      setClosingNotes([]);
+    });
     const offExit = EventsOn("chat:exit", (data: ExitInfoData) => {
       // 異常終了は区切り中でも隠さない: /exit の尾部（Feedback → 知覚）が
       // 失敗したのに「区切った」と言うのはエラーの握り潰しになる。
@@ -175,6 +199,12 @@ function App() {
       expectedExitRef.current = false;
       setBoundary(false);
       ledgerRefreshRef.current.schedule();
+      // 締めが終わった＝待つものは無い。×を押した人の意思どおり閉じる
+      // （異常終了でも同じ: 待ち続ける相手がもう居ない）。
+      if (closingRef.current) {
+        void QuitNow();
+        return;
+      }
       if (data.error !== "") {
         appendSystem(`チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`);
         return;
@@ -188,6 +218,7 @@ function App() {
     return () => {
       offView();
       offOut();
+      offClosing();
       offExit();
       ledgerRefreshRef.current.cancel();
     };
@@ -313,6 +344,16 @@ function App() {
         if (awaiting) {
           setBoundary(true);
         }
+        // 窓を閉じる途中なら、同じ行がダイアログの問い（await）と経過の表示
+        // （それ以外）になる (ADR-0005 Decision 2)。ログにも同じものを積む —
+        // ダイアログは締めの間だけの器で、会話の記録はチャット面が持つ。
+        if (closingRef.current) {
+          if (awaiting) {
+            setClosingQuestion(parseBoundaryQuestion(text));
+          } else {
+            setClosingNotes((prev) => [...prev, text.trim()]);
+          }
+        }
         setMessages((prev) => [...prev, { id: createMessageId(), kind: "note", text, await: awaiting }]);
         break;
       }
@@ -405,6 +446,20 @@ function App() {
       });
   }
 
+  // 締めダイアログのボタン1つ = 端末で打つ1行 (ADR-0005 Decision 2)。空文字は
+  // 本体の「無信号」経路（Enter=まだ言えない/スキップ）そのもの。答えた瞬間に
+  // 問いを畳んで、次の器官の質問が来るまで待ちの表示へ戻す。
+  function handleClosingAnswer(send: string) {
+    setClosingQuestion(null);
+    void sendLine(send);
+  }
+
+  // 「待たずに閉じる」: 猶予を捨てて即座に回収する（Go 側 AbandonBoundary）。
+  function handleAbandonBoundary() {
+    setClosingMode(false);
+    void AbandonBoundary();
+  }
+
   function handleSelectSession(sessionID: string) {
     setSelectedSession(sessionID);
     setActivePane("session");
@@ -489,6 +544,14 @@ function App() {
           <SessionPane sessionId={selectedSession} />
         )}
       </main>
+      {closing && (
+        <ClosingDialog
+          question={closingQuestion}
+          notes={closingNotes}
+          onAnswer={handleClosingAnswer}
+          onAbandon={handleAbandonBoundary}
+        />
+      )}
     </div>
   );
 }
