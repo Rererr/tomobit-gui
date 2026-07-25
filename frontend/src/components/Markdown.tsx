@@ -4,6 +4,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+import type { main } from "../../wailsjs/go/models";
+import { commandFromFence, isRunnable } from "../commandBlock";
+import { errorMessage } from "../errorMessage";
+import { useRunCommand } from "./RunCommandProvider";
+import { RunCommandStrip } from "./RunCommandStrip";
 
 // pre>codeの子要素からコピー対象の生テキストを復元する。fenced code blockの
 // 中身はremarkがインライン記法を解釈しないため、実質は単一の文字列ノードだが、
@@ -21,12 +26,33 @@ function extractText(node: ReactNode): string {
   return "";
 }
 
+// フェンスの言語は `<code>` の className（`language-sh` 等）に載る。pre の
+// override が受け取る children はその code 要素なので、props から取り出す。
+function fenceClassName(node: ReactNode): string | undefined {
+  if (node !== null && typeof node === "object" && "props" in node) {
+    const className = (node.props as { className?: unknown }).className;
+    return typeof className === "string" ? className : undefined;
+  }
+  return undefined;
+}
+
 function CodeBlock({ children }: { children?: ReactNode }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
+  // 確認の帯を開いているか (ADR-0007 Decision 3)。1度目のクリックはここを
+  // 開くだけで、走らせるのは帯の中の2度目。
+  const [confirming, setConfirming] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<main.CommandRun | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const runCommand = useRunCommand();
+
+  const text = extractText(children);
+  const command = commandFromFence(text);
+  const runnable = runCommand.enabled && isRunnable(fenceClassName(children), text);
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(extractText(children));
+      await navigator.clipboard.writeText(text);
       setStatus("copied");
     } catch {
       // クリップボード権限拒否等。握り潰さずボタン文言で伝える。
@@ -35,12 +61,56 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     setTimeout(() => setStatus("idle"), 1500);
   }
 
+  async function handleRun() {
+    setRunning(true);
+    setRunError(null);
+    try {
+      setResult(await runCommand.run(command));
+      // 走った後は帯を閉じる: 開いたままだと、結果を読んでいる最中に
+      // 「実行」がもう一度押せる位置に居座る。
+      setConfirming(false);
+    } catch (err) {
+      // 起動できなかった・設定が OFF・別のコマンドが走っている。握り潰さない。
+      setRunError(errorMessage(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   return (
     <div className="md-code-block">
-      <button className="md-code-copy-btn" onClick={() => void handleCopy()}>
-        {status === "copied" ? "コピーした" : status === "error" ? "コピー失敗" : "コピー"}
-      </button>
+      <div className="md-code-actions">
+        {runnable && (
+          <button
+            className="md-code-run-btn"
+            onClick={() => setConfirming((open) => !open)}
+            disabled={running}
+            aria-expanded={confirming}
+          >
+            {confirming ? "やめる" : "▶ 実行"}
+          </button>
+        )}
+        <button className="md-code-copy-btn" onClick={() => void handleCopy()}>
+          {status === "copied" ? "コピーした" : status === "error" ? "コピー失敗" : "コピー"}
+        </button>
+      </div>
       <pre>{children}</pre>
+      {runnable && (
+        <RunCommandStrip
+          command={command}
+          workingDir={runCommand.workingDir}
+          confirming={confirming}
+          running={running}
+          result={result}
+          error={runError}
+          onRun={() => void handleRun()}
+          onCancel={() => setConfirming(false)}
+          onDismissResult={() => {
+            setResult(null);
+            setRunError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

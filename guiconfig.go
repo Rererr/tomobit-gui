@@ -45,6 +45,13 @@ type GUIConfig struct {
 	// 動いても GUI の挙動が無言で変わらないため）。
 	Provider string `json:"provider,omitempty"`
 
+	// RunCommand はチャット内のコマンド実行ボタン (ADR-0007 Decision 1)。
+	// TranscriptCache と同じ tri-state で既定も同じ側 — キー無し＝OFF。
+	// 実行経路は便利さのために既定で開けてよい種類の口ではないので、
+	// 明示 true が来るまでボタンそのものを出さない（本体 ADR-0049
+	// 「沈黙は同意ではない」）。
+	RunCommand *bool `json:"run_command,omitempty"`
+
 	// SidebarTomoCollapsed / SidebarUsageCollapsed はサイドバーの2つの
 	// 開閉式セクション (ADR-0006) の畳み状態。「表示ノブ」は gui.json に置く
 	// —— ADR-0001 Decision 4 が定めた置き場そのもの。
@@ -100,6 +107,13 @@ func (c GUIConfig) FaceWindowEnabled() bool {
 // FaceWindowEnabled の逆の既定: 機微の永続は明示 true が来るまで始めない。
 func (c GUIConfig) TranscriptCacheEnabled() bool {
 	return c.TranscriptCache != nil && *c.TranscriptCache
+}
+
+// RunCommandEnabled resolves the tri-state (unset/explicit ON/explicit OFF) for
+// the in-chat run button (ADR-0007 Decision 1). Unset means OFF, like
+// TranscriptCacheEnabled — 実行の口は明示 true が来るまで開かない。
+func (c GUIConfig) RunCommandEnabled() bool {
+	return c.RunCommand != nil && *c.RunCommand
 }
 
 func guiConfigPath() (string, error) {

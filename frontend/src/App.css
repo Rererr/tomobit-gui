@@ -830,10 +830,19 @@
   font-size: 12px;
 }
 
-.md-code-copy-btn {
+/* コード塊の右肩のボタン列（コピー、そして有効なら実行）。1つだったころは
+   コピーボタン自身が absolute だったが、2つ並ぶので器の方を浮かせる */
+.md-code-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 6px;
+  z-index: 1;
+}
+
+.md-code-copy-btn,
+.md-code-run-btn {
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--color-border);
@@ -843,9 +852,166 @@
   cursor: pointer;
 }
 
-.md-code-copy-btn:hover {
+.md-code-copy-btn:hover,
+.md-code-run-btn:hover:not(:disabled) {
   background-color: var(--color-bg-raised);
   color: var(--color-text);
+}
+
+.md-code-run-btn:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+/* 実行の確認の帯 (ADR-0007 Decision 3)。details/summary ではなく専用の帯に
+   したのは、開いた状態が「まだ走っていない」ことを画面で語る必要があるため。
+   左の琥珀の罫が、この帯だけが持つ「これから起きること」の合図になる */
+.md-run-confirm {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-warning-accent);
+  border-radius: 0 6px 6px 0;
+  background-color: var(--color-bg-surface);
+}
+
+.md-run-confirm-lead {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+/* 全文を出す（省略も要約もしない）。長い1行は折り返して見せる — 横スクロールへ
+   逃がすと「見せた」ことにならない */
+.md-run-confirm-command {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background-color: var(--color-bg-well);
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.md-run-confirm-where {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.md-run-confirm-dir {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.md-run-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.md-run-go-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.md-run-go-btn:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+.md-run-go-btn:disabled {
+  background-color: var(--color-border);
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+.md-run-cancel-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.md-run-cancel-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-raised);
+}
+
+/* 実行の結果 (ADR-0007 Decision 5)。Tomo の吹き出しの中に置かれるが、
+   Tomo の発話ではない — 左の罫と面で「差し込まれたもの」として区別する */
+.md-run-result {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-border);
+  border-radius: 0 6px 6px 0;
+  background-color: var(--color-bg-surface);
+}
+
+.md-run-result--failed,
+.md-run-result--error {
+  border-left-color: var(--color-warning);
+}
+
+.md-run-result-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.md-run-result--error .md-run-result-head {
+  color: var(--color-warning);
+}
+
+.md-run-dismiss-btn {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  color: var(--color-text-muted-aa);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.md-run-dismiss-btn:hover {
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+}
+
+.md-run-result-body {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background-color: var(--color-bg-well);
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.md-run-result-body--stderr {
+  color: var(--color-warning);
+}
+
+.md-run-result-empty,
+.md-run-result-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted-aa);
 }
 
 /* 画像は自動読み込みしない代わりのプレースホルダ（受動的な情報流出経路を

@@ -54,6 +54,10 @@ export function QuitNow() {
   return window['go']['main']['App']['QuitNow']();
 }
 
+export function RunCommand(arg1) {
+  return window['go']['main']['App']['RunCommand'](arg1);
+}
+
 export function SaveGUIConfig(arg1) {
   return window['go']['main']['App']['SaveGUIConfig'](arg1);
 }

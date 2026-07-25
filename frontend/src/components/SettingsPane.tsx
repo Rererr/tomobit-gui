@@ -36,6 +36,9 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
   // 会話の全文を残す (ADR-0003 Decision 0)。既定 OFF — キー無しは false 扱い
   // （faceWindowEnabled と違い未設定でも ON にしない）。
   const [transcriptCache, setTranscriptCache] = useState(false);
+  // チャットからのコマンド実行 (ADR-0007 Decision 1)。既定 OFF —
+  // transcript_cache と同じで、キー無しは false 扱い。
+  const [runCommand, setRunCommand] = useState(false);
   // チャットのProvider（本体 ADR-0043 Decision 5）。既定 auto — Tomoが経験から選ぶ。
   const [provider, setProvider] = useState("auto");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
@@ -52,6 +55,7 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
     setSpeakingStyle(config.speaking_style);
     setFaceEnabled(faceWindowEnabled(config.face_enabled));
     setTranscriptCache(config.transcript_cache === true);
+    setRunCommand(config.run_command === true);
     setProvider(chatProvider(config.provider));
   }, [config]);
 
@@ -61,6 +65,7 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
         speaking_style: speakingStyle,
         face_enabled: faceEnabled,
         transcript_cache: transcriptCache,
+        run_command: runCommand,
         provider,
       });
       setSaveState({ kind: "saved" });
@@ -78,6 +83,7 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
     (speakingStyle !== config.speaking_style ||
       faceEnabled !== faceWindowEnabled(config.face_enabled) ||
       transcriptCache !== (config.transcript_cache === true) ||
+      runCommand !== (config.run_command === true) ||
       provider !== chatProvider(config.provider));
 
   return (
@@ -155,6 +161,25 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
         有効な間だけ ~/.tomobit/gui-scrollback/ に会話の全文を平文で保存し、過去セッションを全文で読み返せるようにする。
         有効化は次のチャット（New chatで区切った後）から、無効化は即時（現行セッションの以後の記録も止まる）。
         OFFに戻しても既に保存した分は残る。端末の忘却（forget --session）で消したセッションは、GUIも次回起動/区切りで追随して消す
+      </p>
+
+      <label className="settings-checkbox-field">
+        <input
+          type="checkbox"
+          checked={runCommand}
+          onChange={(event) => {
+            setRunCommand(event.target.checked);
+            setSaveState({ kind: "idle" });
+          }}
+          disabled={!ready}
+        />
+        <span>チャットからコマンドを実行する</span>
+      </label>
+      <p className="settings-note">
+        Tomoの答えの中の sh / bash / zsh のコードブロックに実行ボタンが出る。押すと確認の帯が開き、
+        走るコマンドの全文と場所（作業ディレクトリ）を見せたうえで、もう一度押して初めて走る。
+        <strong>これはモデルが書いた文字列を実行する経路です</strong> — 確認の帯は、読まなければ何も守りません。
+        結果は会話にも台帳にも残らず、画面を離れると消える。反映は即時
       </p>
 
       {!ready && loadError === null && <p className="settings-status">読み込み中…</p>}

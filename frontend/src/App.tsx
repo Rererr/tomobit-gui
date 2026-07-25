@@ -8,6 +8,7 @@ import { WorkspaceBar } from "./components/WorkspaceBar";
 import { MemoryPane } from "./components/MemoryPane";
 import { SessionPane } from "./components/SessionPane";
 import { ClosingDialog } from "./components/ClosingDialog";
+import { RunCommandProvider } from "./components/RunCommandProvider";
 import {
   AbandonBoundary,
   EndTask,
@@ -16,6 +17,7 @@ import {
   GetSpriteSheet,
   GetTomoStatus,
   QuitNow,
+  RunCommand,
   SaveGUIConfig,
   SendLine,
   SetWorkspace,
@@ -507,6 +509,16 @@ function App() {
   );
 
   return (
+    // 実行ボタン (ADR-0007) の配線。チャットと過去セッションは同じ MessageView →
+    // Markdown を通るので、両方を含む一番外側で1度だけ配る。設定がまだ読めて
+    // いない間 (guiConfig === null) は無効 — 読めていないことを ON 側へ倒さない。
+    <RunCommandProvider
+      value={{
+        enabled: guiConfig?.run_command === true,
+        workingDir: guiConfig?.working_dir ?? "",
+        run: RunCommand,
+      }}
+    >
     <div id="app">
       <Sidebar
         activePane={activePane}
@@ -582,6 +594,7 @@ function App() {
         />
       )}
     </div>
+    </RunCommandProvider>
   );
 }
 

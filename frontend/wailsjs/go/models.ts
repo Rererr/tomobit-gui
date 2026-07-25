@@ -24,6 +24,32 @@ export namespace main {
 	        this.provider = source["provider"];
 	    }
 	}
+	export class CommandRun {
+	    command: string;
+	    working_dir: string;
+	    stdout: string;
+	    stderr: string;
+	    exit_code: number;
+	    timed_out: boolean;
+	    truncated: boolean;
+	    duration_ms: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CommandRun(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.command = source["command"];
+	        this.working_dir = source["working_dir"];
+	        this.stdout = source["stdout"];
+	        this.stderr = source["stderr"];
+	        this.exit_code = source["exit_code"];
+	        this.timed_out = source["timed_out"];
+	        this.truncated = source["truncated"];
+	        this.duration_ms = source["duration_ms"];
+	    }
+	}
 	export class Connection {
 	    kind: string;
 	    scope_key: string;
@@ -119,6 +145,7 @@ export namespace main {
 	    working_dir?: string;
 	    read_dirs?: string[];
 	    provider?: string;
+	    run_command?: boolean;
 	    sidebar_tomo_collapsed?: boolean;
 	    sidebar_usage_collapsed?: boolean;
 	
@@ -134,6 +161,7 @@ export namespace main {
 	        this.working_dir = source["working_dir"];
 	        this.read_dirs = source["read_dirs"];
 	        this.provider = source["provider"];
+	        this.run_command = source["run_command"];
 	        this.sidebar_tomo_collapsed = source["sidebar_tomo_collapsed"];
 	        this.sidebar_usage_collapsed = source["sidebar_usage_collapsed"];
 	    }

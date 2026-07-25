@@ -212,3 +212,57 @@ func TestGUIConfig_サイドバーの畳み状態は既定で開いている(t *
 		t.Error("開いたままの側までキーが書かれている — 既定は書かずに省く")
 	}
 }
+
+// ADR-0007 Decision 1: 実行の口はキー無し＝OFF。face_enabled と逆の既定で、
+// transcript_cache と同じ側 —— 明示 true が来るまでボタンそのものを出さない。
+func TestGUIConfig_RunCommand_キー無しJSONはOFF(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(p, []byte(`{"speaking_style":"a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadGUIConfigFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RunCommandEnabled() {
+		t.Errorf("run_command キー無しは OFF であるべき: %+v", c)
+	}
+}
+
+func TestGUIConfig_RunCommand_明示trueだけがON(t *testing.T) {
+	for _, tc := range []struct {
+		json string
+		want bool
+	}{
+		{`{"run_command":true}`, true},
+		{`{"run_command":false}`, false},
+	} {
+		p := filepath.Join(t.TempDir(), "gui.json")
+		if err := os.WriteFile(p, []byte(tc.json), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := loadGUIConfigFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.RunCommandEnabled(); got != tc.want {
+			t.Errorf("%s → RunCommandEnabled() = %v, want %v", tc.json, got, tc.want)
+		}
+	}
+}
+
+// OFF のまま保存したときキーを書き残さない（omitempty のポインタ）。既定 OFF の
+// 設定に false を書き込むと、「一度は触った」という別の意味が JSON に残る。
+func TestGUIConfig_RunCommand_未設定は保存してもキーを残さない(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "gui.json")
+	if err := saveGUIConfigFile(p, GUIConfig{SpeakingStyle: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "run_command") {
+		t.Errorf("未設定なのに run_command が書かれている: %s", data)
+	}
+}
