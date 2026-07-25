@@ -33,8 +33,11 @@ func TestLoadGUIConfigFile_壊れたJSONは意味のあるエラー(t *testing.T
 
 func TestGUIConfig_RoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "nested", "gui.json")
-	faceOff := false
-	want := GUIConfig{SpeakingStyle: "関西弁で、絵文字は使わずに", FaceEnabled: &faceOff}
+	// 顔窓は明示 ON で往復させる: 既定が OFF になった今 (ADR-0001 Decision 5
+	// 追記 2026-07-26)、false で往復してもキーが落ちたのか保たれたのか
+	// FaceWindowEnabled からは見分けられない。
+	faceOn := true
+	want := GUIConfig{SpeakingStyle: "関西弁で、絵文字は使わずに", FaceEnabled: &faceOn}
 	if err := saveGUIConfigFile(p, want); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +57,9 @@ func TestGUIConfig_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestGUIConfig_FaceEnabled_キー無しJSONは後方互換でON(t *testing.T) {
+// ADR-0001 Decision 5 追記 (2026-07-26): サイドバーに姿が立った以上、顔窓の
+// 既定は OFF。キー無し（何も言っていない人）に二匹目を出さない。
+func TestGUIConfig_FaceEnabled_キー無しJSONはOFF(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "gui.json")
 	if err := os.WriteFile(p, []byte(`{"speaking_style":"a"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -63,8 +68,8 @@ func TestGUIConfig_FaceEnabled_キー無しJSONは後方互換でON(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.FaceWindowEnabled() {
-		t.Errorf("face_enabled キー無しは ON であるべき: %+v", c)
+	if c.FaceWindowEnabled() {
+		t.Errorf("face_enabled キー無しは OFF であるべき: %+v", c)
 	}
 }
 
@@ -213,8 +218,8 @@ func TestGUIConfig_サイドバーの畳み状態は既定で開いている(t *
 	}
 }
 
-// ADR-0007 Decision 1: 実行の口はキー無し＝OFF。face_enabled と逆の既定で、
-// transcript_cache と同じ側 —— 明示 true が来るまでボタンそのものを出さない。
+// ADR-0007 Decision 1: 実行の口はキー無し＝OFF。transcript_cache・
+// face_enabled と同じ側 —— 明示 true が来るまでボタンそのものを出さない。
 func TestGUIConfig_RunCommand_キー無しJSONはOFF(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "gui.json")
 	if err := os.WriteFile(p, []byte(`{"speaking_style":"a"}`), 0o600); err != nil {

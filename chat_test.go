@@ -72,7 +72,8 @@ func TestComposeChatEnv_顔窓オプトインと喋り方を積む(t *testing.T)
 		return false
 	}
 
-	// TOMOBIT_FACE 未設定 + GUI設定ON（既定） → =1 が付く（この pipe の先に人が居る宣言）。
+	// TOMOBIT_FACE 未設定 + GUI設定ON（明示。既定は OFF） → =1 が付く
+	// （この pipe の先に人が居る宣言）。
 	if env := composeChatEnv([]string{"PATH=/usr/bin"}, "", false, "", true); !has(env, "TOMOBIT_FACE=1") {
 		t.Errorf("未設定・ON なのに TOMOBIT_FACE=1 が立たない: %v", env)
 	}
@@ -91,7 +92,7 @@ func TestComposeChatEnv_顔窓オプトインと喋り方を積む(t *testing.T)
 		}
 	}
 
-	// TOMOBIT_FACE 未設定 + GUI設定OFF → 何も書かない沈黙のまま
+	// TOMOBIT_FACE 未設定 + GUI設定OFF（既定） → 何も書かない沈黙のまま
 	// （`=0` は書かない — pipe では沈黙=開かないため、OFFの意思は沈黙で表す）。
 	if env := composeChatEnv([]string{"PATH=/usr/bin"}, "", false, "", false); hasKey(env, "TOMOBIT_FACE") {
 		t.Errorf("未設定・OFF なのに TOMOBIT_FACE が書かれた: %v", env)

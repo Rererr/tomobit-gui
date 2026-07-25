@@ -184,11 +184,12 @@ func composeClaudeArgsAppend(existing, speakingStyle string) string {
 //
 // faceSet が真（親が TOMOBIT_FACE を明示している）なら顔窓の env には触らない —
 // ユーザーの明示した =0 を GUI が黙って =1 で覆すのは env>config の序列に反する。
-// faceSet が偽のときだけ GUI 設定 faceEnabled（既定 ON）を見る: ON なら
-// 「この pipe の先に人が居る」と=1を立て（ADR-0032 Decision 3）、GUI設定で
-// OFF にした場合は何も書かず沈黙のままにする — 本体の「env沈黙時の既定は
-// TTYゲート」により pipe 起動では沈黙=開かないので、OFFの意思は `=0` を書く
-// のでなく黙ることで表す。
+// faceSet が偽のときだけ GUI 設定 faceEnabled（既定 OFF / ADR-0001 Decision 5
+// 追記 2026-07-26 — サイドバーに姿が立った以上、顔窓まで既定で開けば二匹に
+// なる）を見る: 明示 ON なら「この pipe の先に人が居る」と=1を立て
+// （ADR-0032 Decision 3）、そうでなければ何も書かず沈黙のままにする — 本体の
+// 「env沈黙時の既定は TTYゲート」により pipe 起動では沈黙=開かないので、
+// 顔窓を出さない意思は `=0` を書くのでなく黙ることで表す。
 func composeChatEnv(base []string, speakingStyle string, faceSet bool, existingAppend string, faceEnabled bool) []string {
 	env := base
 	if style := strings.TrimSpace(speakingStyle); style != "" {

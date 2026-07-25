@@ -23,7 +23,8 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
 - 窓を閉じる前の締め（×は即座には閉じず、本体の境界の器官——Feedback→知覚→質問→鏡——を
   走らせる。質問はポップアップのボタンで答える。ADR-0005）
 - サイドバーの常設View（Tomoの姿と、Provider別の利用・残量。どちらも開閉式で、
-  畳み状態は `gui.json` に残る。ADR-0006。**残量は本体側で既定OFF** — 本体
+  畳み状態は `gui.json` に残る。ADR-0006。姿がここに立つので**顔窓は既定OFF** —
+  別窓の相棒も欲しい人は設定の「顔窓を開く」で二匹にできる。**残量は本体側で既定OFF** — 本体
   [ADR-0049](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0049-quota-observation-is-opt-in.md)
   で `quota_observe` を有効にするまで、ゲージそのものが出ない）
 - チャットからのコマンド実行（**既定OFF**。設定で有効にすると、Tomoの答えの中の
@@ -88,7 +89,7 @@ open build/bin/tomobit-gui.app     # wails build の .app から
 
 ## Docs
 
-- [ADR-0001](docs/decisions/ADR-0001-gui-architecture.md) — GUIは第三のレンダラ（台帳はひとつ / `tomobit chat` 子プロセス / メモリはro View / 喋り方は起動引数 / 姿は顔窓のまま）
+- [ADR-0001](docs/decisions/ADR-0001-gui-architecture.md) — GUIは第三のレンダラ（台帳はひとつ / `tomobit chat` 子プロセス / メモリはro View / 喋り方は起動引数 / 姿は顔窓のまま——ただしサイドバーにも立つので顔窓の自動起動は既定OFF）
 - [ADR-0002](docs/decisions/ADR-0002-tech-stack.md) — 技術スタック（Wails v2 / React + TypeScript strict / LLMは既存Provider経路=claude-code既定・API直結却下）
 - [ADR-0003](docs/decisions/ADR-0003-session-transcript-cache.md) — 過去セッションの表示=スクロールバックの永続化（viewストリーム素通し追記・忘却より長生きしない・上限つき / **オプトイン・既定OFF**で先行実装 — 有効化するまで1バイトも書かない。既定の是非は所有者の裁定待ち）
 - [ADR-0004](docs/decisions/ADR-0004-workspace-scope.md) — Tomoが働く場所（作業ディレクトリ=chat子プロセスのcwd / 読み取り先は本体の`/add-dir`へ宣言=Provider非依存 / 置き場はログと入力欄の間 / 反映は走行中のチャットにも届く。Decision 2/3 は本体ADR-0047を受けて改訂）
