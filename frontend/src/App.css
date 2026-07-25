@@ -582,6 +582,10 @@
   background-color: var(--color-bg-raised);
 }
 
+/* 役割ラベル。今は Tomo 側にしか出ない —— 自分の発言は右寄せと吹き出しの色で
+   誰のものか分かるので、ラベルは sr-only にした（ChatMessageView 参照）。
+   Tomo 側は左寄せの吹き出しが1種類しかなく、provider チップと並ぶ行の頭でも
+   あるので残している。 */
 .chat-message-role {
   display: block;
   font-size: 12px;

@@ -158,7 +158,12 @@ export function MessageView({ message }: { message: ChatMessage }) {
     case "user":
       return (
         <div className="chat-message chat-message--user">
-          <span className="chat-message-role">You</span>
+          {/* 誰の発言かは右寄せと吹き出しの色で分かるので、ラベルは目には出さない。
+              ただし消しはしない —— 右寄せも背景色も、読み上げには何も伝えない。
+              chat-log は role="log" で新着を読み上げる面（ChatPane 参照）なので、
+              話者が消えると自分の発言とTomoの発言が地続きに聞こえる。
+              sr-only は判断の監査行の table caption と同じ扱い。 */}
+          <span className="sr-only">You</span>
           <p className="chat-message-text">{message.text}</p>
         </div>
       );

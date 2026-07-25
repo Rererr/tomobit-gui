@@ -109,7 +109,9 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
       case "user":
         return (
           <div key={i} className="chat-message chat-message--user">
-            <span className="chat-message-role">You</span>
+            {/* ライブ側 (ChatMessageView) と同じ扱い: 右寄せと色で分かるので
+                目には出さず、読み上げにだけ残す */}
+            <span className="sr-only">You</span>
             <p className="chat-message-text">{row.text}</p>
           </div>
         );
