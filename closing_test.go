@@ -108,6 +108,31 @@ func TestBeforeClose_送信に失敗したら差し止めない(t *testing.T) {
 	}
 }
 
+// 2026-07-26 の応答停止の再発防止。beforeClose は Wails の UI スレッドで走るので、
+// 子が stdin を読んでいない（ターンの最中＝まさに人が窓を閉じたくなる状況）
+// ときに素の write で止まると、凍った窓から逃げる手段そのものが凍る。
+func TestBeforeClose_子が読んでいなくてもUIスレッドを止めない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	app.proc = blockedProc(t)
+
+	var stop bool
+	waitOrFail(t, 2*time.Second,
+		"子が stdin を読んでいないだけで beforeClose が返らない（窓が固まる）",
+		func() { stop = app.beforeClose(context.Background()) })
+
+	// 送れなかった以上、区切りは走らない。差し止めれば「閉じないのに何も
+	// 起きない窓」になるので、そのまま閉じて shutdown の回収へ落とす。
+	if stop {
+		t.Fatal("区切りを送れていないのに閉窓を差し止めている")
+	}
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	if app.closingBoundary {
+		t.Fatal("走らなかった区切りの最中だと記憶している — 次の×が素通しになる")
+	}
+}
+
 // 「待たずに閉じる」は猶予を捨てる。ここで chatShutdownGrace を待つと、
 // 答えないと決めた後に15秒固まる — この設計が直したはずの症状そのもの。
 func TestShutdown_待たずに閉じるなら猶予を待たない(t *testing.T) {
