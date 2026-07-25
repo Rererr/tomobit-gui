@@ -1,6 +1,8 @@
+import { memo } from "react";
 import type { ChatMessage, DecidedEvent, TurnMessage } from "../types";
 import type { FoldedBlock, WorkBlock } from "../turnFold";
 import { foldWorkBlocks, workSummaryLabel } from "../turnFold";
+import { splitStreamingMarkdown } from "../streamingMarkdown";
 import { Markdown } from "./Markdown";
 
 // ChatPane から切り出した読み取り専用の描画部（ADR-0003 Decision 1: 過去表示は
@@ -89,19 +91,39 @@ function WorkFold({ work }: { work: WorkBlock }) {
   return (
     <details className="chat-turn-work">
       <summary>{workSummaryLabel(work)}</summary>
-      <div className="chat-turn-work-blocks">{work.blocks.map((block, i) => renderBlock(block, i))}</div>
+      {/* 畳まれた作業ログは、終わったターンにしか現れない（turnFold）。
+          流れている最中ではないので、本文は全文を1回で解く。 */}
+      <div className="chat-turn-work-blocks">{work.blocks.map((block, i) => renderBlock(block, i, false))}</div>
     </details>
   );
 }
 
-function renderBlock(block: FoldedBlock, key: number) {
+// 流れている最中の本文。確定した段落と伸びている末尾に切り分けて、別々の
+// Markdown へ渡す (streamingMarkdown.ts / 2026-07-26 の応答停止への修正)。
+// 確定ぶんは text が変わらないので memo が再パースを飛ばし、毎フレーム解き直す
+// のは末尾だけになる。切らずに全文を渡していた頃は、1回のパース費用が累積量に
+// 比例して伸び、長いターンでフレームが返らなくなっていた。
+function StreamingText({ text }: { text: string }) {
+  const segments = splitStreamingMarkdown(text);
+  return (
+    <>
+      {segments.map((segment, i) => (
+        <Markdown key={i} text={segment} />
+      ))}
+    </>
+  );
+}
+
+function renderBlock(block: FoldedBlock, key: number, streaming: boolean) {
   switch (block.kind) {
     case "work":
       return <WorkFold key={key} work={block} />;
     case "text":
+      // 終わったターンは全文を1回で解き直す: 段落ごとの独立パースは緩いリスト
+      // などで全文パースと解釈が食い違いうるので、残る表示は従来のまま揃える。
       return (
         <div key={key} className="chat-turn-text">
-          <Markdown text={block.text} />
+          {streaming ? <StreamingText text={block.text} /> : <Markdown text={block.text} />}
         </div>
       );
     case "tool":
@@ -160,7 +182,7 @@ function TurnCard({ message }: { message: TurnMessage }) {
           {/* 走行中はそのまま、終わったら作業ログを畳んで答えを前に出す
               （turnFold.ts）。畳むのは見た目だけで、ブロックは1つも捨てない。 */}
           {foldWorkBlocks(message.blocks, message.finished !== undefined).map((block, i) =>
-            renderBlock(block, i),
+            renderBlock(block, i, message.finished === undefined),
           )}
         </div>
       )}
@@ -174,8 +196,16 @@ function TurnCard({ message }: { message: TurnMessage }) {
   );
 }
 
-/** 1 つの ChatMessage を描く。ライブ・過去の両方がこの単一の描画源を通す。 */
-export function MessageView({ message }: { message: ChatMessage }) {
+/**
+ * 1 つの ChatMessage を描く。ライブ・過去の両方がこの単一の描画源を通す。
+ *
+ * memo で包むのは速さのためではなく、固まらないため (2026-07-26 の応答停止)。
+ * ストリームが動かすのは常に最後のターン1つだけなのに、包まないと到着のたびに
+ * 確定済みの全メッセージが再描画され、その全てで foldWorkBlocks が再計算される。
+ * 追記は appendBlocksTo が対象ターンだけ新しい参照に差し替えるので、既定の
+ * 浅い比較で「動いていないものは描き直さない」が成立する。
+ */
+export const MessageView = memo(function MessageView({ message }: { message: ChatMessage }) {
   switch (message.kind) {
     case "user":
       return (
@@ -202,4 +232,4 @@ export function MessageView({ message }: { message: ChatMessage }) {
     case "stderr":
       return <div className="chat-message--stderr">{message.text}</div>;
   }
-}
+});

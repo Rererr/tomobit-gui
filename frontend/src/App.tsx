@@ -27,6 +27,7 @@ import type { main } from "../wailsjs/go/models";
 import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from "./types";
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
+import { appendBlocksTo } from "./appendBlocks";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
 import { parseBoundaryQuestion } from "./boundaryChoices";
 import type { BoundaryQuestion } from "./boundaryChoices";
@@ -50,15 +51,6 @@ interface OutChunkData {
 
 interface ExitInfoData {
   error: string;
-}
-
-// 連続する text ブロックはひとつに結合する（本体は本文を細切れの text で流す）。
-function appendTurnBlock(blocks: TurnBlock[], block: TurnBlock): TurnBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (block.kind === "text" && last !== undefined && last.kind === "text") {
-    return [...blocks.slice(0, -1), { kind: "text", text: last.text + block.text }];
-  }
-  return [...blocks, block];
 }
 
 function App() {
@@ -97,6 +89,13 @@ function App() {
   // text/tool/tool_result/error はこの id のターンへ追記する（購読は一度きりなので
   // ref で最新の開き枠を追う）。
   const openTurnIdRef = useRef<string | null>(null);
+  // 到着したブロックの溜め場と、フレーム1回のフラッシュ予約 (2026-07-26 の
+  // 応答停止への修正 / appendBlocks.ts)。到着ごとに setMessages すると、1チャンク
+  // につきログ全体の再描画と scrollIntoView の同期レイアウトが走り、長いターンで
+  // 二次曲線に乗って窓が固まる。受信はここへ積むだけにして、描画はフレームに
+  // 1回へ畳む。
+  const pendingBlocksRef = useRef<TurnBlock[]>([]);
+  const flushHandleRef = useRef<number | null>(null);
   // 窓の×が始めた締め (ADR-0005)。Go の beforeClose が /exit を送って閉窓を
   // 差し止め、app:closing でこちらへ知らせる。以後 await の note はチャット面
   // ではなくこのダイアログの問いになり、chat:exit で閉じる。イベント購読は
@@ -211,6 +210,9 @@ function App() {
       setClosingNotes([]);
     });
     const offExit = EventsOn("chat:exit", (data: ExitInfoData) => {
+      // プロセスが終わった以上、溜まりの続きはもう来ない。ここで流し切らないと
+      // 最後のターンの末尾が画面に出ないまま残る。
+      flushPendingBlocks();
       // 異常終了は区切り中でも隠さない: /exit の尾部（Feedback → 知覚）が
       // 失敗したのに「区切った」と言うのはエラーの握り潰しになる。
       const expected = expectedExitRef.current;
@@ -238,6 +240,10 @@ function App() {
       offOut();
       offClosing();
       offExit();
+      if (flushHandleRef.current !== null) {
+        cancelAnimationFrame(flushHandleRef.current);
+        flushHandleRef.current = null;
+      }
       ledgerRefreshRef.current.cancel();
     };
   }, []);
@@ -257,21 +263,40 @@ function App() {
     });
   }
 
-  // 開いているターンへブロックを追記する。契約上ブロックは turn.started の後にしか
-  // 来ないが、万一開き枠が無ければ落とさず新しい枠を開く（n/provider は不明）。
-  function appendBlock(block: TurnBlock) {
-    const openId = openTurnIdRef.current;
-    if (openId === null) {
-      const newId = createMessageId();
-      openTurnIdRef.current = newId;
-      setMessages((prev) => [...prev, { id: newId, kind: "turn", n: 0, provider: "", blocks: [block] }]);
+  // 溜まったブロックを開いている枠へ流し込む。予約が残っていれば取り下げてから
+  // 走るので、フラッシュは「フレームが来た」「順序上いま流し切る必要がある」の
+  // どちらから呼んでも二重に走らない。
+  function flushPendingBlocks() {
+    if (flushHandleRef.current !== null) {
+      cancelAnimationFrame(flushHandleRef.current);
+      flushHandleRef.current = null;
+    }
+    const pending = pendingBlocksRef.current;
+    if (pending.length === 0) {
       return;
     }
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === openId && m.kind === "turn" ? { ...m, blocks: appendTurnBlock(m.blocks, block) } : m,
-      ),
-    );
+    pendingBlocksRef.current = [];
+    const openId = openTurnIdRef.current;
+    setMessages((prev) => appendBlocksTo(prev, openId, pending));
+  }
+
+  // 開いているターンへブロックを追記する。契約上ブロックは turn.started の後にしか
+  // 来ないが、万一開き枠が無ければ落とさず新しい枠を開く（n/provider は不明）。
+  // 反映は次のフレームまで遅らせる — 到着はストリームの速さで来るが、人が読める
+  // 速さは画面の更新頻度が上限で、その間の中間状態を描く意味は無い。
+  function appendBlock(block: TurnBlock) {
+    if (openTurnIdRef.current === null) {
+      // id だけ先に確定させる: 実体の枠は flush が appendBlocksTo で開くが、
+      // turn.finished がこの枠を見つけられるよう ref は今のうちに合わせる。
+      openTurnIdRef.current = createMessageId();
+    }
+    pendingBlocksRef.current.push(block);
+    if (flushHandleRef.current === null) {
+      flushHandleRef.current = requestAnimationFrame(() => {
+        flushHandleRef.current = null;
+        flushPendingBlocks();
+      });
+    }
   }
 
   // chat:view の NDJSON イベントを構造化メッセージへ落とす。未知の type は無視する
@@ -284,6 +309,10 @@ function App() {
     const ev = raw;
     switch (ev.type) {
       case "turn.started": {
+        // 溜まりを先に流し切ってから開き枠を差し替える: 後回しにすると、前の
+        // ターンのブロックが新しい枠の id で流れ込み、発言が1つ後ろのターンへ
+        // ずれる。
+        flushPendingBlocks();
         const id = createMessageId();
         openTurnIdRef.current = id;
         const n = asNumber(ev.n) ?? 0;
@@ -338,6 +367,9 @@ function App() {
         break;
       }
       case "turn.finished": {
+        // 締める前に溜まりを流し切る: 残したまま枠を閉じると、最後のひと息の
+        // ブロックが行き先を失う。畳み込み(turnFold)も全ブロックが揃ってから走る。
+        flushPendingBlocks();
         const id = openTurnIdRef.current;
         openTurnIdRef.current = null;
         const durationMs = asNumber(ev.duration_ms) ?? 0;
