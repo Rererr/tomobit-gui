@@ -27,6 +27,22 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: frontend test
+        working-directory: frontend
+        run: npm test
+
+      # Go側より先に。main.go の `go:embed all:frontend/dist` は dist が無いと
+      # コンパイルに失敗し、gofmt以外のGoステップが全部倒れる(実測: CI初回)。
+      # frontend/dist はビルド生成物でgitignore対象なので、CIでは必ずここで作る。
+      # `npm run build` は `tsc && vite build` — 型検査もこの中で走る。
+      - name: frontend build
+        working-directory: frontend
+        run: npm run build
+
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
@@ -42,15 +58,3 @@ jobs:
       # 実Providerを叩く E2E は TOMOBIT_GUI_E2E=1 でのみ走る。CIでは立てない。
       - name: go test
         run: go test ./...
-
-      - name: frontend install
-        working-directory: frontend
-        run: npm ci
-
-      - name: frontend typecheck
-        working-directory: frontend
-        run: npx tsc --noEmit
-
-      - name: frontend test
-        working-directory: frontend
-        run: npm test
