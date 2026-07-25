@@ -29,6 +29,13 @@ which door you came in through.
   answer with buttons
 - **Sidebar** — Tomo's appearance and per-provider usage/quota, drawn from
   `tomobit-face --view json`. The GUI owns no sprite grid of its own
+- **Run a command from chat — off by default.** Enable it and `sh`/`bash`/`zsh`
+  code blocks in Tomo's answers grow a run button. The first click opens a strip
+  showing the full command and the working directory it will run in; a second
+  click runs it. This is a path that executes model-authored text, and the strip
+  only guarantees an *opportunity* to read — the ADR says so in those words.
+  Results are never written to the conversation, the scrollback, or the ledger
+  ([ADR-0007](docs/decisions/ADR-0007-run-command-from-chat.md))
 
 There is no user profile feature.
 

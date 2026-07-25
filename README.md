@@ -26,6 +26,10 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
   畳み状態は `gui.json` に残る。ADR-0006。**残量は本体側で既定OFF** — 本体
   [ADR-0049](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0049-quota-observation-is-opt-in.md)
   で `quota_observe` を有効にするまで、ゲージそのものが出ない）
+- チャットからのコマンド実行（**既定OFF**。設定で有効にすると、Tomoの答えの中の
+  sh/bash/zsh コードブロックに実行ボタンが出る。押すと確認の帯が開き、走る全文と
+  作業ディレクトリを見せたうえで、もう一度押して初めて走る。結果は会話にも台帳にも
+  残らない。ADR-0007）
 
 ユーザープロフィール機能は持たない。
 
@@ -90,6 +94,7 @@ open build/bin/tomobit-gui.app     # wails build の .app から
 - [ADR-0004](docs/decisions/ADR-0004-workspace-scope.md) — Tomoが働く場所（作業ディレクトリ=chat子プロセスのcwd / 読み取り先は本体の`/add-dir`へ宣言=Provider非依存 / 置き場はログと入力欄の間 / 反映は走行中のチャットにも届く。Decision 2/3 は本体ADR-0047を受けて改訂）
 - [ADR-0005](docs/decisions/ADR-0005-closing-boundary.md) — 窓を閉じる前の締め（×で15秒固まっていたのは本体が境界の器官を走らせている時間だった / `OnBeforeClose` で閉窓を差し止め New chat と同じ `/exit` を送り、`await` の note をボタン化したモーダルで答える。選択肢は本体の行から読む＝GUIは語彙を持たない / 降りる道は「待たずに閉じる」1つで、そこでは猶予も捨てる）
 - [ADR-0006](docs/decisions/ADR-0006-sidebar-standing-views.md) — サイドバーの常設View（ログとカテゴリの間に Tomo・Usage の開閉式セクション・既定は開いた姿・畳み状態は gui.json / Usage は残量だけを枠1本のゲージで〈逼迫80%だけ色を変える・観測できない枠にはバーを引かない〉、Provider別の利用実績はメモリペインに残す / 姿は本体 `tomobit-face --view json` の資産を canvas に描く — 瞬き・呼吸・気分記号まで顔窓と同じ数字で、GUIは格子を1つも持たない）
+- [ADR-0007](docs/decisions/ADR-0007-run-command-from-chat.md) — チャットからのコマンド実行（**既定OFF・opt-in** / ボタンが出るのは sh・bash・zsh と申告されたフェンスだけ＝申告の無い塊をコマンドとみなさない / 1度目のクリックでは走らず、走る全文と作業ディレクトリを見せる帯を開いて2度目で走る — ただし帯は読まれなければ何も守らない、と ADR に明記 / `sh -c` でパイプもリダイレクトも通す＝argv分割は安全を買わないのに使えるコマンドだけを減らす / 結果は会話にもスクロールバックにも台帳にも残さない）
 - [BACKLOG](docs/BACKLOG.md) — 残課題（本体側の設計待ち / GUI側の未実装）
 
 ## Stack
