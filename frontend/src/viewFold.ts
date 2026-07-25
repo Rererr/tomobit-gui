@@ -1,5 +1,6 @@
 import type { ChatMessage, DecidedEvent, TurnBlock } from "./types";
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
+import { budgetToolResult } from "./displayBudget";
 
 // 連続する text ブロックはひとつに結合する（App.tsx appendTurnBlock と同じ規律 —
 // 本体は本文を細切れの text で流す）。
@@ -107,7 +108,10 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
       case "tool_result": {
         const text = asString(ev.text);
         if (text !== undefined) {
-          appendBlock({ kind: "tool_result", text });
+          // ライブと同じ予算で畳む（ADR-0003 Decision 1: 過去表示はライブと
+          // 同じ構造化描画）。ここだけ無制限にすると、過去を開いた瞬間に
+          // ライブでは載らない量が載ることになる。
+          appendBlock({ kind: "tool_result", text: budgetToolResult(text) });
         }
         break;
       }
