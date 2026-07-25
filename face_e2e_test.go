@@ -8,13 +8,14 @@ import (
 	"time"
 )
 
-// TOMOBIT_GUI_E2E=1 で有効になる実環境検証: GUI の chat 起動（pipe + TOMOBIT_FACE
-// 沈黙 → =1 を立てる）で実物の顔窓が開き、対話の終わり（stdin EOF → プロセス終了 →
-// 在席0 → 猶予）で閉じることを見る。かつて TOMOBIT_FACE=1 は pipe では本体の TTY
-// ゲートに握り潰される死に配線で（本体 ADR-0032 以前）、その死活はユニットテスト
-// （env 合成の確認）には映らない — だから実プロセス・実窓で見る。ターンは走らせない
-// （顔窓は chat 起動時に開く）ので Provider 呼び出しはゼロ。
-func TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる(t *testing.T) {
+// TOMOBIT_GUI_E2E=1 で有効になる実環境検証: GUI設定で顔窓を明示ONにした状態の
+// chat 起動（pipe + TOMOBIT_FACE 沈黙 → =1 を立てる）で実物の顔窓が開き、対話の
+// 終わり（stdin EOF → プロセス終了 → 在席0 → 猶予）で閉じることを見る。かつて
+// TOMOBIT_FACE=1 は pipe では本体の TTY ゲートに握り潰される死に配線で（本体
+// ADR-0032 以前）、その死活はユニットテスト（env 合成の確認）には映らない —
+// だから実プロセス・実窓で見る。ターンは走らせない（顔窓は chat 起動時に開く）
+// ので Provider 呼び出しはゼロ。
+func TestE2E_顔窓がGUI設定ONのchat起動で開き対話の終わりで閉じる(t *testing.T) {
 	if os.Getenv("TOMOBIT_GUI_E2E") == "" {
 		t.Skip("TOMOBIT_GUI_E2E=1 のときだけ実環境を動かす")
 	}
@@ -35,6 +36,10 @@ func TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる(t 
 
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
+	// 顔窓は明示 ON にする: 既定は OFF になった（ADR-0001 Decision 5 追記
+	// 2026-07-26）ので、無設定のままでは「開く」経路そのものを踏まない。
+	on := true
+	app.guiConfig = GUIConfig{FaceEnabled: &on}
 
 	// 最初の1行を /exit にする: chat は起動し（ここで顔窓が開く）、ターンを走らせず
 	// 境界だけ踏む。締めの Feedback 質問が来ても後段の shutdown（stdin EOF = 無信号）
@@ -50,11 +55,13 @@ func TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる(t 
 		func() bool { return !faceRunning() })
 }
 
-// TOMOBIT_GUI_E2E=1 で有効になる実環境検証: GUI設定で顔窓トグルを明示OFFに
-// した状態で chat を起動しても、pipe に TOMOBIT_FACE=1 が立たず実物の顔窓
-// プロセスが現れないことを見る。composeChatEnv のユニットテスト（env合成の
-// 確認）は実プロセスを立てないため、本体の TTY ゲート越しでも本当に沈黙が
-// 「開かない」に落ちることまでは映らない — だから実プロセス・実窓で見る。
+// TOMOBIT_GUI_E2E=1 で有効になる実環境検証: 顔窓トグルが OFF の状態（キー無しの
+// 既定・明示 false のどちらも同じ沈黙に落ちる）で chat を起動しても、pipe に
+// TOMOBIT_FACE=1 が立たず実物の顔窓プロセスが現れないことを見る。既定が OFF に
+// なった今 (ADR-0001 Decision 5 追記 2026-07-26)、これは「初めて GUI を開いた人
+// の画面に二匹目が出ない」の実測でもある。composeChatEnv のユニットテスト
+// （env合成の確認）は実プロセスを立てないため、本体の TTY ゲート越しでも本当に
+// 沈黙が「開かない」に落ちることまでは映らない — だから実プロセス・実窓で見る。
 func TestE2E_顔窓がGUI設定OFFではchat起動で開かない(t *testing.T) {
 	if os.Getenv("TOMOBIT_GUI_E2E") == "" {
 		t.Skip("TOMOBIT_GUI_E2E=1 のときだけ実環境を動かす")
@@ -74,8 +81,9 @@ func TestE2E_顔窓がGUI設定OFFではchat起動で開かない(t *testing.T) 
 
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
-	off := false
-	app.guiConfig = GUIConfig{FaceEnabled: &off}
+	// guiConfig はゼロ値のまま = face_enabled キー無し（既定 OFF）。実際に
+	// 初回起動の人が持つ状態そのもので走らせる。
+	app.guiConfig = GUIConfig{}
 
 	// /exit だけ送ってターンは走らせない（顔窓は chat 起動時に開く／開かないが
 	// 決まる）。

@@ -17,14 +17,18 @@ import (
 type GUIConfig struct {
 	SpeakingStyle string `json:"speaking_style"`
 
-	// FaceEnabled は顔窓トグル (ADR-0001 Decision 5)。ポインタで「キー無し」と
-	// 「明示 false」を区別する: 既存の gui.json にはまだキーが無く、それは
-	// 現行挙動（ON）のまま読める必要がある。plain bool では両者が区別できず
-	// 後方互換が壊れる。
+	// FaceEnabled は顔窓トグル (ADR-0001 Decision 5 / 既定の反転は同 Decision 5
+	// 追記 2026-07-26)。キー無し＝OFF: サイドバーに姿が立った今 (ADR-0006
+	// Decision 2)、顔窓まで既定で開けば同じ Tomo が画面に二匹並ぶ。
+	// TranscriptCache / RunCommand と同じ「明示 true が来るまで開かない」側。
+	//
+	// キー無しと明示 false は同じ OFF に落ちるが、ポインタは残す: 顔窓を切った
+	// 意思と、まだ何も言っていない状態は別のもので、tri-state のまま持っておけば
+	// 既定をまた動かす日に人の明示を黙って覆さずに済む。
 	FaceEnabled *bool `json:"face_enabled,omitempty"`
 
 	// TranscriptCache は会話全文のスクロールバック永続 (ADR-0003 Decision 0)。
-	// FaceEnabled と同じ tri-state ポインタだが既定は逆で、キー無し=OFF —
+	// FaceEnabled と同じ tri-state ポインタで、既定も同じ側の キー無し=OFF —
 	// 機微の永続は同意ゲートの向こう側なので、人が明示 true を入れるまで
 	// 1バイトも書かない（既存 gui.json にキーが無いのが安全側の初期状態）。
 	TranscriptCache *bool `json:"transcript_cache,omitempty"`
@@ -95,23 +99,26 @@ func (c GUIConfig) NormalizedReadDirs() []string {
 	return dirs
 }
 
-// FaceWindowEnabled resolves the tri-state (unset/ON/explicit OFF) to the
-// bool composeChatEnv needs. Unset means ON — 既存の gui.json にキーが無くて
-// も顔窓が黙って閉じない後方互換。
+// FaceWindowEnabled resolves the tri-state (unset/explicit ON/explicit OFF) to
+// the bool composeChatEnv needs. Unset means OFF (ADR-0001 Decision 5 追記
+// 2026-07-26) — サイドバーの Tomo (ADR-0006 Decision 2) が既定で立つので、
+// 顔窓も既定で開けば二匹になる。別窓に浮かぶ相棒が欲しい人の明示 true だけを
+// ON とする。
 func (c GUIConfig) FaceWindowEnabled() bool {
-	return c.FaceEnabled == nil || *c.FaceEnabled
+	return c.FaceEnabled != nil && *c.FaceEnabled
 }
 
 // TranscriptCacheEnabled resolves the tri-state (unset/ON/explicit OFF) to the
 // bool the scrollback writer gates on. Unset means OFF (ADR-0003 Decision 0) —
-// FaceWindowEnabled の逆の既定: 機微の永続は明示 true が来るまで始めない。
+// 機微の永続は明示 true が来るまで始めない。
 func (c GUIConfig) TranscriptCacheEnabled() bool {
 	return c.TranscriptCache != nil && *c.TranscriptCache
 }
 
 // RunCommandEnabled resolves the tri-state (unset/explicit ON/explicit OFF) for
 // the in-chat run button (ADR-0007 Decision 1). Unset means OFF, like
-// TranscriptCacheEnabled — 実行の口は明示 true が来るまで開かない。
+// TranscriptCacheEnabled / FaceWindowEnabled — 実行の口は明示 true が来るまで
+// 開かない。
 func (c GUIConfig) RunCommandEnabled() bool {
 	return c.RunCommand != nil && *c.RunCommand
 }

@@ -28,7 +28,9 @@ which door you came in through.
   boundary organs (feedback → perception → question → reflection) and lets you
   answer with buttons
 - **Sidebar** — Tomo's appearance and per-provider usage/quota, drawn from
-  `tomobit-face --view json`. The GUI owns no sprite grid of its own
+  `tomobit-face --view json`. The GUI owns no sprite grid of its own. Since Tomo
+  stands here, **the separate face window is off by default** — turn it on in
+  settings if you want the desktop companion too
 - **Run a command from chat — off by default.** Enable it and `sh`/`bash`/`zsh`
   code blocks in Tomo's answers grow a run button. The first click opens a strip
   showing the full command and the working directory it will run in; a second

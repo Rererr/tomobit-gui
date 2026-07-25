@@ -13,10 +13,11 @@ interface SettingsPaneProps {
   onSave: (patch: Partial<main.GUIConfig>) => Promise<void>;
 }
 
-// 未設定（キー無しJSON）は ON — GUIConfig.FaceWindowEnabled の既定と揃える
-// （Go側: guiconfig.go）。
+// 未設定（キー無しJSON）は OFF — GUIConfig.FaceWindowEnabled の既定と揃える
+// （Go側: guiconfig.go / ADR-0001 Decision 5 追記 2026-07-26）。サイドバーに
+// Tomo が立つ以上、顔窓まで既定で開けば二匹になる。
 function faceWindowEnabled(faceEnabled?: boolean): boolean {
-  return faceEnabled !== false;
+  return faceEnabled === true;
 }
 
 // チャットを走らせるProvider（本体 ADR-0043 Decision 5）。未設定（キー無し）は
@@ -32,9 +33,8 @@ function chatProvider(provider?: string): string {
 
 export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPaneProps) {
   const [speakingStyle, setSpeakingStyle] = useState("");
-  const [faceEnabled, setFaceEnabled] = useState(true);
-  // 会話の全文を残す (ADR-0003 Decision 0)。既定 OFF — キー無しは false 扱い
-  // （faceWindowEnabled と違い未設定でも ON にしない）。
+  const [faceEnabled, setFaceEnabled] = useState(false);
+  // 会話の全文を残す (ADR-0003 Decision 0)。既定 OFF — キー無しは false 扱い。
   const [transcriptCache, setTranscriptCache] = useState(false);
   // チャットからのコマンド実行 (ADR-0007 Decision 1)。既定 OFF —
   // transcript_cache と同じで、キー無しは false 扱い。
@@ -143,7 +143,10 @@ export function SettingsPane({ config, loadError, onReload, onSave }: SettingsPa
         />
         <span>顔窓を開く</span>
       </label>
-      <p className="settings-note">次のチャット（New chatで区切った後）から反映される</p>
+      <p className="settings-note">
+        既定OFF — サイドバーにTomoが居るので、開くと別ウィンドウにもう一匹立つ。
+        反映は次のチャット（New chatで区切った後）から
+      </p>
 
       <label className="settings-checkbox-field">
         <input
