@@ -1,0 +1,49 @@
+name: バグ報告 / Bug report
+description: GUIの想定と違う挙動。日本語・English どちらでも
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **スクリーンショットに実会話が写り込んでいないか確認してください。**
+        メモリペインとチャットログには、実際の会話がそのまま出ます。
+
+        Please check screenshots for real conversation content before attaching.
+
+        挙動が本体（台帳・知覚・Provider選択）由来なら、
+        [tomobit 側](https://github.com/Rererr/tomobit/issues)へお願いします。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きたか / What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現手順 / How to reproduce
+      description: 使い捨て台帳（`TOMOBIT_DB`）で再現するなら、その手順を
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境 / Environment
+      value: |
+        - macOS のバージョン:
+        - tomobit-gui のコミット or タグ:
+        - 本体 tomobit のコミット or タグ:
+        - 起動方法: `make install` / `wails build` の .app / `wails dev`
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認
+      options:
+        - label: 貼った画像・ログに機微な情報が含まれていないことを確認した
+          required: true

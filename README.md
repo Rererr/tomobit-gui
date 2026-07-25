@@ -2,6 +2,8 @@
 
 > **Tomobit is not built to use AI. Tomobit is built to grow with it.**
 
+*English: [README.en.md](README.en.md)（正本はこの日本語版）*
+
 [tomobit](https://github.com/Rererr/tomobit) のChatGPT寄りチャットGUI。
 端末・顔窓に続く**第三のレンダラ + 入力の器**であり、会話は本体の
 `tomobit chat`（pipe mode）を透過して単一の台帳（`~/.tomobit/tomobit.db`）に積まれる。
@@ -21,7 +23,9 @@ GUIは新しい真実を作らない — Tomoは入口によらず同じ台帳�
 - 窓を閉じる前の締め（×は即座には閉じず、本体の境界の器官——Feedback→知覚→質問→鏡——を
   走らせる。質問はポップアップのボタンで答える。ADR-0005）
 - サイドバーの常設View（Tomoの姿と、Provider別の利用・残量。どちらも開閉式で、
-  畳み状態は `gui.json` に残る。ADR-0006）
+  畳み状態は `gui.json` に残る。ADR-0006。**残量は本体側で既定OFF** — 本体
+  [ADR-0049](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0049-quota-observation-is-opt-in.md)
+  で `quota_observe` を有効にするまで、ゲージそのものが出ない）
 
 ユーザープロフィール機能は持たない。
 

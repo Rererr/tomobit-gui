@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 脆弱性の報告 / Report a vulnerability
+    url: https://github.com/Rererr/tomobit-gui/security/advisories/new
+    about: 公開Issueではなく、非公開の報告経路を使ってください
+  - name: 本体の問題 / Issues with the core
+    url: https://github.com/Rererr/tomobit/issues
+    about: 台帳・知覚・Provider選択・成長段の挙動は本体(tomobit)側です
+  - name: 設計を読む / Read the design records
+    url: https://github.com/Rererr/tomobit-gui/tree/main/docs/decisions
+    about: GUIが何をしないかは、だいたいADRに書いてあります
