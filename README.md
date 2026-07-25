@@ -111,3 +111,23 @@ TOMOBIT_GUI_E2E=1 go test -run TestE2E ./...   # 実Provider検証(実APIを1タ
 （`TOMOBIT_DB` で使い捨て台帳、`TOMOBIT_CLAUDE_ARGS` でモデル指定など）。
 実GUIの通し検証は `wails dev` の localhost:34115 を playwright-core（`channel: "chrome"`）で
 駆動する — バインド済みGoメソッドもイベントもブラウザ経由でそのまま動く。
+
+## 貢献 / セキュリティ
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — **CLAは採りません**（DCO / `git commit -s`）。
+  GUIは第三のレンダラであって新しい真実を作らない、という原則を先に読んでください
+- [SECURITY.md](SECURITY.md) — 脆弱性の非公開報告と、このアプリが触るもの
+
+## License
+
+**コードと文書で分けています**（本体 [tomobit](https://github.com/Rererr/tomobit) と同じ方針）。
+
+| 対象 | ライセンス |
+|---|---|
+| `docs/` 以下の文書、`README.md` | [CC BY-SA 4.0](LICENSE-docs) |
+| 上記以外のすべて（Go・TypeScript・CSS・`build/` 資産） | [AGPL-3.0-only](LICENSE) |
+
+© 2026 Rererr
+
+`frontend/wailsjs/` 配下は [Wails](https://github.com/wailsapp/wails)（MIT）の生成物です。
+引用は本体の [CITATION.cff](https://github.com/Rererr/tomobit/blob/main/CITATION.cff) を使ってください。
