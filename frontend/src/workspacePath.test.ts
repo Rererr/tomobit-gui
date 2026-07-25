@@ -5,7 +5,7 @@ import { addReadDir, displayDir } from "./workspacePath.ts";
 test("パス表示は末尾2階層に畳む", () => {
   assert.equal(displayDir("/Users/example/personal-dev/tomobit-gui"), "personal-dev/tomobit-gui");
   assert.equal(displayDir("/Users"), "Users");
-  assert.equal(displayDir("/Users/example/notes/"), "ren/notes");
+  assert.equal(displayDir("/Users/example/notes/"), "example/notes");
 });
 
 test("未設定は空文字のまま、ルートは / と表示する", () => {

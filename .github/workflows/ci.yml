@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # GUIの前提は macOS (README「セットアップ」)。Wails は Linux では webkit2gtk を
+  # 要求するため、対応を宣言していないプラットフォームを CI で偽装しない。
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt が必要なファイル:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # 実Providerを叩く E2E は TOMOBIT_GUI_E2E=1 でのみ走る。CIでは立てない。
+      - name: go test
+        run: go test ./...
+
+      - name: frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: frontend typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: frontend test
+        working-directory: frontend
+        run: npm test
