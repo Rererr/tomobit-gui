@@ -28,6 +28,7 @@ import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
 import { appendBlocksTo } from "./appendBlocks";
+import { budgetToolResult } from "./displayBudget";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
 import { parseBoundaryQuestion } from "./boundaryChoices";
 import type { BoundaryQuestion } from "./boundaryChoices";
@@ -355,7 +356,9 @@ function App() {
       case "tool_result": {
         const text = asString(ev.text);
         if (text !== undefined) {
-          appendBlock({ kind: "tool_result", text });
+          // 受け取った時点で予算に収める（描画時ではなく）: 本体は上限なしで
+          // 流す契約なので、丸ごと持つと長いターンで積み上がるだけ積み上がる。
+          appendBlock({ kind: "tool_result", text: budgetToolResult(text) });
         }
         break;
       }
