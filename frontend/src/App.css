@@ -1,37 +1,60 @@
 :root {
-  /* 面の暗さ順: app < well < surface < raised < active/user-bubble。
-     文字色は text 系、muted-aa は実測コントラスト比に基づく AA 対応トーン
-     （8a8dae/7a7d8c/6b6e7d は 11-16px 級の面で実測 2.9〜4.4:1 に留まり AA(4.5:1)
-     未達だった箇所がある。以後この用途では muted-aa/quiet を使う）。 */
-  --color-bg-app: #14161d;
-  --color-bg-sidebar: #171922;
-  --color-bg-well: #12141c; /* 最も凹んだ面: コード塊・ツール出力本文・強さバーの溝 */
-  --color-bg-surface: #1c1e29; /* カード・入力欄 */
-  --color-bg-raised: #23263a; /* ホバー面と共通のトーン。Tomo吹き出し背景・main-header/chat-input-barの罫にも使う */
-  --color-bg-active: #2a2d44; /* 選択中のnav/セッション項目 */
-  --color-bg-user-bubble: #2b3a55;
-  --color-bg-note-await: #221f17; /* 境界のFeedback質問を強調する下地 */
+  /* 面の暗さ順: well < sidebar < app < surface < raised < active。
+     色相はほぼ中性の暖色（30〜40°）で揃える — 以前は青寄り(230°)で、長時間
+     見ていると冷たく張り詰めて見えた。UI全体の色相差を小さくすると、色が
+     「情報を持っている場所」（accent/warning/success）だけが立つ。
 
-  --color-border: #3a3d4d;
-  --color-border-subtle: #2a2d3a; /* サイドバー罫・区切り線・テーブル罫 */
-  --color-border-input: #2f3244;
+     文字は白まで上げない: 旧 #e6e6e6 on #14161d は実測 14.48:1 あり、暗地に
+     ほぼ白という組み合わせは滲み（halation）を作って読み疲れの原因になる。
+     12.82:1 まで落としても AAA(7:1) には倍近い余裕がある。下げたのは「余った
+     コントラスト」であって、必要なコントラストではない。
 
-  --color-text: #e6e6e6;
-  --color-text-bright: #ffffff; /* 選択中nav/セッションの強調テキスト */
-  --color-text-secondary: #c7c9d6; /* セッション項目・ツール出力本文などの二次テキスト */
-  --color-text-quiet: #a9abbd; /* 注記・引用・役割ラベルのトーン（実測: raised面6.56:1 / user-bubble面5.03:1） */
-  --color-text-muted: #8a8dae; /* ラベル・detail系の既定ミュート（各カード面で実測4.6:1以上） */
-  --color-text-muted-aa: #9698a8; /* muted よりさらに小さい/薄い面向けのAA対応トーン */
-  --color-text-disabled: #6b6e7d; /* 非activeなUI部品の文字専用（WCAG 1.4.3対象外）。地の文には使わない */
+     ここの値を動かしたら contrast.test.ts が実測して落ちる（npm test）。
+     コメントに比率を写経する運用は必ず腐るので、検査は機械側に置いてある。 */
+  --color-bg-app: #1b1a18;
+  --color-bg-sidebar: #171614;
+  --color-bg-well: #100f0e; /* 最も凹んだ面: コード塊・ツール出力本文・強さバーの溝 */
+  --color-bg-surface: #242220; /* カード・入力欄 */
+  --color-bg-raised: #2b2926; /* ホバー面と共通のトーン。Tomo吹き出し背景・main-header/chat-input-barの罫にも使う */
+  --color-bg-active: #38352f; /* 選択中のnav/セッション項目 */
+  /* 自分の発言だけは寒色寄りに残す: 面の色相を全部揃えた結果、Youの吹き出しが
+     Tomoの吹き出しと明度差だけで区別される状態になった。色相を1つ分ずらす。 */
+  --color-bg-user-bubble: #2e3138;
+  --color-bg-note-await: #2a2318; /* 境界のFeedback質問を強調する下地 */
 
-  --color-accent: #4a6cf7;
-  --color-accent-hover: #3c5cd6;
-  --color-link: #8ca6ff;
-  --color-link-hover: #a8bdff;
-  --color-success: #7fb88a;
-  --color-warning: #b08968; /* エラー・stderr等の低彩度琥珀 */
-  --color-warning-accent: #d9a441;
-  --color-warning-bright: #e6d8bf;
+  /* border は「塗りを持たない部品の唯一の輪郭」になる（.new-chat-btn ら
+     background:transparent のボタン群）。旧 #3a3d4d は地に対して 1.5〜1.8:1
+     しかなく、輪郭として見えていなかった — WCAG 1.4.11 の 3:1 を満たす所まで
+     上げる。装飾の区切り線は border-subtle 側に置いたままにする（1.4.11 は
+     部品の識別に必要な情報だけを対象にするので、罫は上げなくてよい）。 */
+  --color-border: #736c62;
+  --color-border-subtle: #322f2b; /* サイドバー罫・区切り線・テーブル罫 */
+  --color-border-input: #4f4941; /* 塗りを持つ入力欄の輪郭。:focus で focus に変わる */
+
+  --color-text: #e0ddd6;
+  --color-text-bright: #fbfaf7; /* 選択中nav/セッションの強調テキスト。純白は使わない */
+  --color-text-secondary: #c2beb5; /* セッション項目・ツール出力本文などの二次テキスト */
+  --color-text-quiet: #a5a098; /* 注記・引用・役割ラベルのトーン */
+  --color-text-muted: #979288; /* ラベル・detail系の既定ミュート */
+  --color-text-muted-aa: #a09a90; /* muted よりさらに小さい/薄い面向けのAA対応トーン */
+  --color-text-disabled: #78716a; /* 非activeなUI部品の文字専用（WCAG 1.4.3対象外）。地の文には使わない */
+
+  /* accent は彩度を落とした鋼青。旧 #4a6cf7 は白文字との実測が 4.39:1 で AA 未達
+     だった（送信ボタンの文言がそれに当たる）。暖色の地に高彩度の青を置くと補色
+     どうしで縁が振動して見えるので、明度で立たせて彩度では立たせない。 */
+  --color-accent: #456b96;
+  --color-accent-hover: #3a5c82;
+  /* :focus の輪郭は accent とは別トークン。accent は塗りとして白文字を
+     載せる側なので暗くしてあり、そのまま輪郭に流用すると入力欄の地に対して
+     3:1 を割る（実測 2.87:1 で contrast.test.ts が落ちた）。塗りに要る暗さと
+     線に要る明るさは両立しないので、色を分ける。 */
+  --color-focus: #7aa5d4;
+  --color-link: #8fb3dd;
+  --color-link-hover: #aecbee;
+  --color-success: #7fa87f;
+  --color-warning: #c08a5e; /* エラー・stderr等の低彩度琥珀 */
+  --color-warning-accent: #c9973f;
+  --color-warning-bright: #ecdfc9;
 }
 
 #app {
@@ -1091,7 +1114,7 @@
 
 .chat-input:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-focus);
 }
 
 .chat-send-btn {
@@ -1150,7 +1173,7 @@
 
 .settings-textarea:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-focus);
 }
 
 .settings-note {
@@ -1176,7 +1199,7 @@
 
 .settings-select:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-focus);
 }
 
 .settings-checkbox-field {
@@ -1306,7 +1329,7 @@
 
 .memory-filter-input:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-focus);
 }
 
 .memory-filter-input::placeholder {
