@@ -9,6 +9,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,6 +81,37 @@ func (p *chatProc) write(s string) error {
 	defer p.writeMu.Unlock()
 	_, err := io.WriteString(p.stdin, s)
 	return err
+}
+
+// errWriteTimeout は writeWithin が期限内に書き切れなかったこと。子が stdin を
+// 読んでいない（ターンの最中）ときの満杯パイプか、writeMu を握った別の書き手が
+// 同じ理由で止まっているかのどちらか。どちらも「今は伝えられない」であって
+// 配管の故障ではないので、呼び出し側は諦めて先へ進んでよい。
+var errWriteTimeout = errors.New("chat への書き込みが期限内に終わらなかった")
+
+// beforeCloseWriteGrace は閉窓の /exit を送るのに待つ上限 (2026-07-26 の応答停止
+// への修正)。人が×を押してから窓が反応するまでの辛抱の長さで、区切りが走る
+// 15秒(chatShutdownGrace)とは別物 — こちらは「送れたか」だけを待つ。
+const beforeCloseWriteGrace = 250 * time.Millisecond
+
+// writeWithin は write を別ゴルーチンへ逃がし、期限を切って待つ。
+//
+// write は満杯のパイプでも writeMu の競合でも止まりうる。UIスレッド（Wails の
+// OnBeforeClose）から直接呼ぶと、その一番止まりやすい瞬間に窓ごと固まる —
+// 凍った窓を人が閉じられなくするという、まさに直したい症状そのものになる。
+//
+// 期限切れのゴルーチンは放置してよい: shutdown が stdin を閉じれば Go ランタイムの
+// ポーラが待機中の write をエラーで叩き起こし、そこで必ず終わる。閉窓は1回きりなので
+// 溜まることもない。
+func (p *chatProc) writeWithin(s string, d time.Duration) error {
+	done := make(chan error, 1)
+	go func() { done <- p.write(s) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(d):
+		return errWriteTimeout
+	}
 }
 
 // chatShutdownGrace は閉窓時に子プロセスの区切り（Feedback の EOF → 知覚）を
@@ -452,7 +484,12 @@ func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 // ままの emitEvent は同じ mutex を取り直してデッドロックする。
 func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
 	if !a.guiConfig.TranscriptCacheEnabled() {
-		return nil, ""
+		// 既定 OFF は同意の設計として正しいが、黙って OFF なのは別の話
+		// (2026-07-26 の応答停止で26分の会話が全損した)。書いていないなら、
+		// 会話はこの窓のメモリにしか無い — 落ちれば残らない。失うものを
+		// 知らないまま話し続けられる状態にしない。起動時の1行だけで、
+		// 以後は黙る（診断は他の起動時の注記と同じ stderr 面へ）。
+		return nil, scrollbackOffDiagnostic
 	}
 	dir, err := scrollbackDir()
 	if err != nil {
@@ -474,6 +511,14 @@ func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
 		},
 	}, ""
 }
+
+// scrollbackOffDiagnostic は「全文を残していない」ことの申告 (ADR-0003
+// Decision 0 の既定 OFF)。書いていない事実そのものより、落ちたら何も残らない
+// という帰結の方が人には要る情報なので、そちらを先に言う。
+// 文言は設定ペインのラベルと1文字も違えない (SettingsPane「会話の全文を残す」):
+// 案内された言葉で画面を探して見つからないのは、黙っているより悪い。
+const scrollbackOffDiagnostic = "会話の全文は残していない — この窓が閉じると読み返せない。" +
+	"残すなら 設定 → 会話の全文を残す"
 
 // missingDirsDiagnostic wording for read dirs dropped at launch (ADR-0004
 // Decision 5). 空のときは空文字 — 何も落ちていないなら何も言わない。

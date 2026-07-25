@@ -261,7 +261,13 @@ func (a *App) beforeClose(_ context.Context) bool {
 	// 送れないなら差し止める理由も無い: 区切りは走らないので、そのまま閉じて
 	// shutdown の回収に任せる（失敗の診断は stderr 面へ — もう読む窓は無いが、
 	// 握り潰すよりは残す）。
-	if err := p.write("/exit\n"); err != nil {
+	//
+	// 期限を切って書くのは、ここが UI スレッドだから (2026-07-26 の応答停止への
+	// 修正 / chat.go writeWithin)。子がターンの最中で stdin を読んでいなければ
+	// 素の write は止まりうる。凍った窓から逃げるための器官(ADR-0005)が、
+	// その凍った瞬間にだけ窓を道連れにするのでは筋が通らない。期限切れは
+	// 「区切りを走らせられなかった」であって失敗ではないので、差し止めずに閉じる。
+	if err := p.writeWithin("/exit\n", beforeCloseWriteGrace); err != nil {
 		a.mu.Lock()
 		a.closingBoundary = false
 		a.mu.Unlock()
