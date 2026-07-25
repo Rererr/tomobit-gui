@@ -1,4 +1,6 @@
-import type { ChatMessage, DecidedEvent, TurnBlock, TurnMessage } from "../types";
+import type { ChatMessage, DecidedEvent, TurnMessage } from "../types";
+import type { FoldedBlock, WorkBlock } from "../turnFold";
+import { foldWorkBlocks, workSummaryLabel } from "../turnFold";
 import { Markdown } from "./Markdown";
 
 // ChatPane から切り出した読み取り専用の描画部（ADR-0003 Decision 1: 過去表示は
@@ -80,8 +82,22 @@ function DecidedDisclosure({ decided }: { decided: DecidedEvent }) {
   );
 }
 
-function renderBlock(block: TurnBlock, key: number) {
+// 終わったターンの作業ログ（turnFold.ts が畳んだ連なり）。中身は 1 つも
+// 捨てていないので、開けば元の順序のまま全部出る — chat-turn-tool-result と
+// 同じネイティブ details/summary で、開閉とキーボード操作はブラウザに委ねる。
+function WorkFold({ work }: { work: WorkBlock }) {
+  return (
+    <details className="chat-turn-work">
+      <summary>{workSummaryLabel(work)}</summary>
+      <div className="chat-turn-work-blocks">{work.blocks.map((block, i) => renderBlock(block, i))}</div>
+    </details>
+  );
+}
+
+function renderBlock(block: FoldedBlock, key: number) {
   switch (block.kind) {
+    case "work":
+      return <WorkFold key={key} work={block} />;
     case "text":
       return (
         <div key={key} className="chat-turn-text">
@@ -140,7 +156,13 @@ function TurnCard({ message }: { message: TurnMessage }) {
           <span />
         </div>
       ) : (
-        <div className="chat-turn-blocks">{message.blocks.map((block, i) => renderBlock(block, i))}</div>
+        <div className="chat-turn-blocks">
+          {/* 走行中はそのまま、終わったら作業ログを畳んで答えを前に出す
+              （turnFold.ts）。畳むのは見た目だけで、ブロックは1つも捨てない。 */}
+          {foldWorkBlocks(message.blocks, message.finished !== undefined).map((block, i) =>
+            renderBlock(block, i),
+          )}
+        </div>
       )}
       {message.finished !== undefined && (
         <div className="chat-turn-footer">

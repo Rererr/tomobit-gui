@@ -930,6 +930,34 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* 終わったターンの作業ログ（turnFold.ts）。走行中は tool 行がそのまま並び、
+   turn.finished が来た瞬間にこの1行へ畳まれる。要約行はツール行と同じ
+   モノスペースの脇道トーンに揃える — 畳んだ結果が本文より目立つと、
+   「答えを前に出す」という畳む目的そのものが裏返る。 */
+.chat-turn-work > summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  list-style-position: outside;
+}
+
+.chat-turn-work > summary:hover {
+  color: var(--color-text-secondary);
+}
+
+/* 開いた中身は、畳む前と同じ間隔で積む（chat-turn-blocks と同じ規律）。
+   左の罫は「ここは畳まれていた領域だ」という境界で、開いた後も本文と
+   作業ログの区別が消えないようにする */
+.chat-turn-work-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--color-border-subtle);
+}
+
 /* ツール出力: 既定折り畳み（本体は無加工・上限なしで流す — 表示予算は消費者側） */
 .chat-turn-tool-result {
   font-size: 12px;
