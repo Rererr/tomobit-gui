@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AmendExperience, ForgetExperiences, GetMemoryView } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
 import { errorMessage } from "../errorMessage";
+import { providerUsageDetail } from "../usageView";
 
 type LoadState =
   | { kind: "loading" }
@@ -17,62 +18,6 @@ type RowAction =
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString();
-}
-
-// formatRelativeTime は Provider別利用サマリの「最終利用」だけが要る簡便な
-// 相対表記 — 経験一覧は絶対時刻(formatDate)のまま揃えているので、こちらは
-// 独立した小さい関数にする。
-function formatRelativeTime(ms: number): string {
-  if (ms <= 0) {
-    return "-";
-  }
-  const diff = Date.now() - ms;
-  if (diff < 60_000) {
-    return "たった今";
-  }
-  if (diff < 3_600_000) {
-    return `${Math.floor(diff / 60_000)}分前`;
-  }
-  if (diff < 86_400_000) {
-    return `${Math.floor(diff / 3_600_000)}時間前`;
-  }
-  return `${Math.floor(diff / 86_400_000)}日前`;
-}
-
-// providerUsageDetail は1行のProvider利用実績を「回数・成功率・最終利用」に
-// 圧縮する。scored=0(結果の信号が読めた実行が無い)は成功率を「-」にする —
-// 母数0の平均を出すと0%の失敗と見分けが付かない。
-function providerUsageDetail(p: main.ProviderUsage): string {
-  const successText = p.scored > 0 ? `成功率 ${Math.round(p.success * 100)}%` : "成功率 -";
-  return `${p.runs}回 ・ ${successText} ・ 最終 ${formatRelativeTime(p.last_ts)}`;
-}
-
-// formatResetTime は残量枠のリセットまでの相対表記。0・過去は空文字 —
-// ベンダーが言わなかった枠(resets_at=0)に「あと0分」を発明しない
-// (本体 cmd の relativeResetTime と同じ姿勢、本体 ADR-0044 Decision 5)。
-function formatResetTime(ms: number): string {
-  if (ms <= 0) {
-    return "";
-  }
-  const diff = ms - Date.now();
-  if (diff <= 0) {
-    return "";
-  }
-  if (diff < 3_600_000) {
-    return `あと${Math.floor(diff / 60_000)}分`;
-  }
-  if (diff < 86_400_000) {
-    return `あと${Math.floor(diff / 3_600_000)}時間`;
-  }
-  return `あと${Math.floor(diff / 86_400_000)}日`;
-}
-
-// quotaWindowText は残量1枠を「ラベル 使用率（リセット）」に圧縮する。使用率は
-// 本体がベンダー申告値をそのまま渡したもの — GUI側で丸める以外の加工はしない。
-function quotaWindowText(w: main.QuotaWindow): string {
-  const reset = formatResetTime(w.resets_at ?? 0);
-  const used = `${Math.round(w.used_percent)}%`;
-  return reset !== "" ? `${w.label} ${used}（${reset}）` : `${w.label} ${used}`;
 }
 
 // formatKV flattens a JSON object's own keys into "k=v" pairs — enough of a
@@ -185,12 +130,15 @@ function sectionCount(matched: number, total: number): string {
 }
 
 interface MemoryPaneProps {
-  // Provider別の利用は本体status --view jsonの追加フィールド(補助的なサマリ)。
+  // 残量はこのペインを離れた (ADR-0006 Decision 1): 会話中に一目で欲しい値
+  // だったのでサイドバーの Usage セクションが持つ。Provider別の利用実績は
+  // ここに残る — こちらは「どれだけ一緒にやってきたか」の記録で、
+  // connections と同じ台帳の読み返しである。
+  //
   // App.tsxのヘッダが既に取得済みのTomoStatusをpropsで受け取る — ここで
   // GetTomoStatusを再度呼ぶと、開くたびに `tomobit status --view json` の
   // 子プロセスが二重起動する。取得に失敗していれば tomoStatus は null で、
-  // その場合はProvider別の利用セクションだけを省く（ヘッダの局所劣化
-  // ＝App.tsx refreshLedgerViewsと同じ姿勢— 経験一覧の表示は妨げない）。
+  // その場合はこのセクションだけを省く（ヘッダの局所劣化と同じ姿勢）。
   tomoStatus: main.TomoStatus | null;
 }
 
@@ -383,7 +331,6 @@ export function MemoryPane({ tomoStatus }: MemoryPaneProps) {
             : null;
 
         const providerUsage = tomoStatus?.providers ?? [];
-        const quota = tomoStatus?.quota ?? [];
 
         return (
         <>
@@ -395,34 +342,6 @@ export function MemoryPane({ tomoStatus }: MemoryPaneProps) {
                   <li key={p.provider} className="memory-item">
                     <div className="memory-item-title">{p.provider}</div>
                     <div className="memory-item-detail">{providerUsageDetail(p)}</div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* 残量（本体 ADR-0044）: 各Providerが自分の usage 端点で申告した
-              利用率。見出しで「tomobit の保証ではない」境界を示す（本体
-              Consequences 項2）。観測できなかったProviderは 0% を発明せず
-              不明（理由）を出す（本体 Decision 5）。 */}
-          {quota.length > 0 && (
-            <section className="memory-section memory-quota">
-              <h3 title="各Providerが自分の usage 端点で申告した利用率 — tomobit の保証ではない">
-                残量（各Providerの申告値・保証ではない）
-              </h3>
-              <ul className="memory-list">
-                {quota.map((q) => (
-                  <li key={q.provider} className="memory-item">
-                    <div className="memory-item-title">{q.provider}</div>
-                    {q.windows && q.windows.length > 0 ? (
-                      <div className="memory-item-detail">
-                        {q.windows.map((w) => quotaWindowText(w)).join(" ・ ")}
-                      </div>
-                    ) : (
-                      <div className="memory-item-detail memory-quota-unknown">
-                        不明（{q.error && q.error.trim() !== "" ? q.error : "理由不明"}）
-                      </div>
-                    )}
                   </li>
                 ))}
               </ul>

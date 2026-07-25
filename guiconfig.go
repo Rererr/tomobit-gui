@@ -44,6 +44,16 @@ type GUIConfig struct {
 	// ChatProvider() が行い、起動 argv には常に明示で積む（本体の既定が将来
 	// 動いても GUI の挙動が無言で変わらないため）。
 	Provider string `json:"provider,omitempty"`
+
+	// SidebarTomoCollapsed / SidebarUsageCollapsed はサイドバーの2つの
+	// 開閉式セクション (ADR-0006) の畳み状態。「表示ノブ」は gui.json に置く
+	// —— ADR-0001 Decision 4 が定めた置き場そのもの。
+	//
+	// キー無し＝開いている: どちらも「常に見えるように」という要求で生えた
+	// セクションなので、初回は開いた姿が既定。畳んだ人の意思だけを true として
+	// 書き残す（bool のゼロ値がそのまま既定になるのでポインタは要らない）。
+	SidebarTomoCollapsed  bool `json:"sidebar_tomo_collapsed,omitempty"`
+	SidebarUsageCollapsed bool `json:"sidebar_usage_collapsed,omitempty"`
 }
 
 // ChatProvider resolves the provider choice for the chat launch (本体

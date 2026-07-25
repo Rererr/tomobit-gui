@@ -181,3 +181,34 @@ func TestGUIConfig_Provider_RoundTrip(t *testing.T) {
 		t.Errorf("round trip provider = %q, want codex", got.Provider)
 	}
 }
+
+// ADR-0006: サイドバーの2セクションは「常に見えるように」という要求で生えた
+// ので、既定は開いた姿。畳んだ人の意思だけを true として書き残す。
+func TestGUIConfig_サイドバーの畳み状態は既定で開いている(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(path, []byte(`{"speaking_style":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadGUIConfigFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SidebarTomoCollapsed || c.SidebarUsageCollapsed {
+		t.Error("キー無しの gui.json が畳まれた状態で読まれる — 既定は開いている")
+	}
+
+	c.SidebarUsageCollapsed = true
+	if err := saveGUIConfigFile(path, c); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "sidebar_usage_collapsed") {
+		t.Error("畳んだ意思が保存されていない")
+	}
+	if strings.Contains(string(data), "sidebar_tomo_collapsed") {
+		t.Error("開いたままの側までキーが書かれている — 既定は書かずに省く")
+	}
+}

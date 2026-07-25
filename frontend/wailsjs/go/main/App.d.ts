@@ -22,6 +22,8 @@ export function GetSessionScrollback(arg1:string):Promise<main.SessionScrollback
 
 export function GetSessions():Promise<main.SessionList>;
 
+export function GetSpriteSheet():Promise<main.SpriteSheet>;
+
 export function GetTomoStatus():Promise<main.TomoStatus>;
 
 export function QuitNow():Promise<void>;

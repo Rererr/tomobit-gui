@@ -1,6 +1,9 @@
 import { Fragment } from "react";
 import type { main } from "../../wailsjs/go/models";
 import type { PaneId } from "../types";
+import { SidebarSection } from "./SidebarSection";
+import { TomoPresence } from "./TomoPresence";
+import { UsagePanel } from "./UsagePanel";
 
 interface SidebarProps {
   activePane: PaneId;
@@ -8,6 +11,14 @@ interface SidebarProps {
   sessionsError: string | null;
   sessionsLoading: boolean;
   selectedSession: string | null;
+  // Tomoの姿と利用状況は台帳/資産のView。取得に失敗していれば null で、
+  // その場合セクションは黙って劣化する（ヘッダの局所劣化と同じ姿勢）。
+  tomoStatus: main.TomoStatus | null;
+  sprite: main.SpriteSheet | null;
+  tomoCollapsed: boolean;
+  usageCollapsed: boolean;
+  onToggleTomo: (collapsed: boolean) => void;
+  onToggleUsage: (collapsed: boolean) => void;
   onNewChat: () => void;
   onSelectPane: (pane: PaneId) => void;
   onSelectSession: (sessionID: string) => void;
@@ -69,10 +80,21 @@ export function Sidebar({
   sessionsError,
   sessionsLoading,
   selectedSession,
+  tomoStatus,
+  sprite,
+  tomoCollapsed,
+  usageCollapsed,
+  onToggleTomo,
+  onToggleUsage,
   onNewChat,
   onSelectPane,
   onSelectSession,
 }: SidebarProps) {
+  // 台帳が無ければ姿も出さない（ヘッダが素の「Tomo」に落ちるのと同じ判断:
+  // 台帳が無いのに毛玉が居るとは言わない）。資産が取れない旧顔窓でも同じ。
+  const stage = tomoStatus !== null && tomoStatus.exists ? tomoStatus.stage : null;
+  const marker = tomoStatus?.mood?.marker ?? "";
+
   return (
     <aside className="sidebar">
       <button className="new-chat-btn" onClick={onNewChat}>
@@ -118,6 +140,34 @@ export function Sidebar({
           })()
         )}
       </div>
+
+      {/* ログ（過去セッション）とカテゴリ（下のnav）の間に、常に見えている
+          2つのView (ADR-0006 Decision 1)。Tomoが上、利用状況が下 */}
+      <SidebarSection
+        title="Tomo"
+        note={stage !== null ? (tomoStatus?.stage_name ?? "") : ""}
+        hint="今のTomo — 姿もアニメも顔窓と同じ資産（本体 ADR-0048）"
+        collapsed={tomoCollapsed}
+        onToggle={onToggleTomo}
+      >
+        {sprite !== null && stage !== null ? (
+          <TomoPresence sheet={sprite} stage={stage} marker={marker} />
+        ) : (
+          <p className="sidebar-section-empty">
+            {stage === null ? "台帳がまだない" : "姿を読めない"}
+          </p>
+        )}
+      </SidebarSection>
+
+      <SidebarSection
+        title="Usage"
+        note="各Providerの申告値"
+        hint="各Providerが自分の usage 端点で申告した使用率 — tomobit の保証ではない"
+        collapsed={usageCollapsed}
+        onToggle={onToggleUsage}
+      >
+        <UsagePanel quota={tomoStatus?.quota ?? []} unavailable={tomoStatus === null} />
+      </SidebarSection>
 
       <nav className="sidebar-footer">
         {/* 区切りを宣言せずに会話へ戻る道。New chat は /exit を送るように

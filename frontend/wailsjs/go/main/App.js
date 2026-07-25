@@ -42,6 +42,10 @@ export function GetSessions() {
   return window['go']['main']['App']['GetSessions']();
 }
 
+export function GetSpriteSheet() {
+  return window['go']['main']['App']['GetSpriteSheet']();
+}
+
 export function GetTomoStatus() {
   return window['go']['main']['App']['GetTomoStatus']();
 }

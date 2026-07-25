@@ -13,6 +13,7 @@ import {
   EndTask,
   GetGUIConfig,
   GetSessions,
+  GetSpriteSheet,
   GetTomoStatus,
   QuitNow,
   SaveGUIConfig,
@@ -63,6 +64,10 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
+  // 姿の資産は動かないので起動時に一度だけ読む（本体 ADR-0048 Decision 2）。
+  // 動く側（ステージ・気分）は refreshLedgerViews が境界ごとに配る。
+  // 取れなければ null のまま — サイドバーのTomoセクションが黙って劣化する。
+  const [sprite, setSprite] = useState<main.SpriteSheet | null>(null);
   // gui.json の唯一のコピー (ADR-0004 Consequences): 設定ペインと作業バーの
   // 2つの口が同じファイルを書くので、各画面が自前で読んだ古い写しから保存
   // すると片方の変更が消える。保存は必ずこの1つへマージしてから書く。
@@ -174,9 +179,20 @@ function App() {
     setSessionsLoading(false);
   }
 
+  // 姿の取得（本体 ADR-0048）。失敗は診断だけ流して黙る — 旧顔窓・未インストール
+  // でも会話は続くべきで、姿が無いのは会話の障害ではない。
+  async function loadSprite() {
+    try {
+      setSprite(await GetSpriteSheet());
+    } catch (err) {
+      appendStderr(`Tomoの姿の取得に失敗: ${errorMessage(err)}\n`);
+    }
+  }
+
   useEffect(() => {
     void refreshLedgerViews();
     void loadGUIConfig();
+    void loadSprite();
     const offView = EventsOn("chat:view", (data: unknown) => {
       handleViewEvent(data);
     });
@@ -460,6 +476,13 @@ function App() {
     void AbandonBoundary();
   }
 
+  // サイドバーの畳み状態は gui.json の表示ノブ (ADR-0001 Decision 4 / ADR-0006)。
+  // 保存の失敗は黙って飲む: 畳んだ形が次回に残らないだけで、今の画面は既に
+  // 畳まれている（details の開閉はブラウザが持つ）— 会話面へ出す値打ちは無い。
+  function saveSidebarFold(patch: Partial<main.GUIConfig>) {
+    void saveGUIConfigPatch(patch).catch(() => {});
+  }
+
   function handleSelectSession(sessionID: string) {
     setSelectedSession(sessionID);
     setActivePane("session");
@@ -491,6 +514,12 @@ function App() {
         sessionsError={sessionsError}
         sessionsLoading={sessionsLoading}
         selectedSession={selectedSession}
+        tomoStatus={tomoStatus}
+        sprite={sprite}
+        tomoCollapsed={guiConfig?.sidebar_tomo_collapsed ?? false}
+        usageCollapsed={guiConfig?.sidebar_usage_collapsed ?? false}
+        onToggleTomo={(collapsed) => saveSidebarFold({ sidebar_tomo_collapsed: collapsed })}
+        onToggleUsage={(collapsed) => saveSidebarFold({ sidebar_usage_collapsed: collapsed })}
         onNewChat={handleNewChat}
         onSelectPane={setActivePane}
         onSelectSession={handleSelectSession}

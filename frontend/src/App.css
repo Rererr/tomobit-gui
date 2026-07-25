@@ -179,12 +179,163 @@
   color: var(--color-text-muted-aa);
 }
 
+/* サイドバーの開閉式セクション（ADR-0006 Decision 1）: ログ（一覧）と
+   カテゴリ（下のnav）の間に常駐する2枚。details/summary はヘッダの成長開示と
+   同じネイティブ方式で、違うのは既定が「開いている」ことだけ */
+.sidebar-section {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 8px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-section-head {
+  cursor: pointer;
+  padding: 2px 2px 2px 0;
+  color: var(--color-text-secondary);
+}
+
+.sidebar-section-head:hover {
+  color: var(--color-text-bright);
+}
+
+.sidebar-section-head-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  vertical-align: bottom;
+}
+
+.sidebar-section-title {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.sidebar-section-note {
+  font-size: 11px;
+  color: var(--color-text-muted-aa);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar-section-body {
+  padding: 6px 0 2px;
+}
+
+.sidebar-section-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted-aa);
+}
+
+/* Tomoの姿（ADR-0006 Decision 2 / 本体 ADR-0048）: 整数拡大の nearest-neighbor
+   のみ。ブラウザの既定の平滑化はドット絵の輪郭を溶かすので必ず切る */
+.tomo-presence {
+  display: flex;
+  justify-content: center;
+}
+
+.tomo-canvas {
+  image-rendering: pixelated;
+}
+
+/* Usage（ADR-0006 Decision 1・2026-07-25 改訂）: 各Providerの申告する残量を
+   ゲージで出す。数字を読ませるのでなく「どれだけ残っているか」を一目で掴む面 */
+.usage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.usage-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted-aa);
+}
+
+/* 枠と枠の間は、見出しと自分のバーの間より広く取る — どのバーがどの枠のものか
+   を、線を引かずに間隔だけで示す */
+.usage-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-provider-name {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.usage-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.usage-gauge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-muted-aa);
+}
+
+.usage-gauge-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.usage-gauge-value {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 溝は最も凹んだ面（強さバーと同じトーン）。高さは強さバーの4pxより厚い6px —
+   あちらは一覧の中の添え物、こちらはこのセクションの主役 */
+.usage-gauge-track {
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--color-bg-well);
+  overflow: hidden;
+}
+
+.usage-gauge-fill {
+  height: 100%;
+  border-radius: 3px;
+  background-color: var(--color-accent);
+  transition: width 240ms ease-out;
+}
+
+/* 逼迫（QUOTA_TIGHT_PERCENT 以上）だけ色を変える。強さバーが評価色を持たない
+   のと姿勢を分けるのは、残量が使い切れば止まる有限の予算だから
+   （usageView.ts quotaTight のコメント参照） */
+.usage-gauge-fill.tight {
+  background-color: var(--color-warning-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-gauge-fill {
+    transition: none;
+  }
+}
+
+.usage-unknown {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-warning);
+}
+
 .sidebar-footer {
   display: flex;
   flex-direction: column;
   gap: 4px;
   border-top: 1px solid var(--color-border-subtle);
   padding-top: 12px;
+  margin-top: 8px;
 }
 
 .sidebar-nav-item {

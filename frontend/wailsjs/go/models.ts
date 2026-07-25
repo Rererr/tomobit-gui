@@ -119,6 +119,8 @@ export namespace main {
 	    working_dir?: string;
 	    read_dirs?: string[];
 	    provider?: string;
+	    sidebar_tomo_collapsed?: boolean;
+	    sidebar_usage_collapsed?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIConfig(source);
@@ -132,6 +134,8 @@ export namespace main {
 	        this.working_dir = source["working_dir"];
 	        this.read_dirs = source["read_dirs"];
 	        this.provider = source["provider"];
+	        this.sidebar_tomo_collapsed = source["sidebar_tomo_collapsed"];
+	        this.sidebar_usage_collapsed = source["sidebar_usage_collapsed"];
 	    }
 	}
 	export class GrowthGate {
@@ -422,6 +426,101 @@ export namespace main {
 	        this.events = source["events"];
 	    }
 	}
+	export class SpriteAnim {
+	    blink_min_ms: number;
+	    blink_jitter_ms: number;
+	    blink_hold_ms: number;
+	    bob_period_ms: number;
+	    bob_px: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpriteAnim(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.blink_min_ms = source["blink_min_ms"];
+	        this.blink_jitter_ms = source["blink_jitter_ms"];
+	        this.blink_hold_ms = source["blink_hold_ms"];
+	        this.bob_period_ms = source["bob_period_ms"];
+	        this.bob_px = source["bob_px"];
+	    }
+	}
+	export class SpriteOverlay {
+	    marker: string;
+	    rows: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SpriteOverlay(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.marker = source["marker"];
+	        this.rows = source["rows"];
+	    }
+	}
+	export class SpriteStage {
+	    stage: number;
+	    name: string;
+	    frames: string[][];
+	    overlay_origin: Record<string, Array<number>>;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpriteStage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stage = source["stage"];
+	        this.name = source["name"];
+	        this.frames = source["frames"];
+	        this.overlay_origin = source["overlay_origin"];
+	    }
+	}
+	export class SpriteSheet {
+	    type: string;
+	    size: number;
+	    breed: string;
+	    palette: Record<string, string>;
+	    stages: SpriteStage[];
+	    overlays: SpriteOverlay[];
+	    anim: SpriteAnim;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpriteSheet(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.size = source["size"];
+	        this.breed = source["breed"];
+	        this.palette = source["palette"];
+	        this.stages = this.convertValues(source["stages"], SpriteStage);
+	        this.overlays = this.convertValues(source["overlays"], SpriteOverlay);
+	        this.anim = this.convertValues(source["anim"], SpriteAnim);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class TomoStatus {
 	    exists: boolean;
 	    stage: number;
