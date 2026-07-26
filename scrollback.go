@@ -68,6 +68,26 @@ type scrollbackWriter struct {
 	// stopped は書き込みを畳んだら立て、以後は静かに no-op になる — 失敗でも
 	// 同意撤回でも、チャットを止めず、同じ理由を stderr へ連呼もしない。
 	stopped bool
+	// live は「今どの窓が書いているか」を答える。窓が複数ある以上、上限の
+	// 巻き添えから守るべきファイルは自分1つではない (ADR-0009)。nil のときは
+	// 自分だけを守る従来の挙動。
+	live func() []string
+}
+
+// liveFiles is the set the cap must not delete: every pane's currently-open
+// scrollback, plus this one. own が live に含まれない瞬間（自分の窓の proc が
+// まだ登録されていない起動直後）があるので、必ず足す。
+func (w *scrollbackWriter) liveFiles(own string) map[string]bool {
+	keep := map[string]bool{own: true}
+	if w.live == nil {
+		return keep
+	}
+	for _, sid := range w.live() {
+		if name, ok := safeScrollbackName(sid); ok {
+			keep[filepath.Join(w.dir, name)] = true
+		}
+	}
+	return keep
 }
 
 // record appends one raw NDJSON view line (改行フレーミングは除去済み)。sid が
@@ -128,8 +148,12 @@ func (w *scrollbackWriter) open(sid string) bool {
 	}
 	w.f = f
 	// 上限チェックは新しいセッションを開くこの瞬間に効かせる (Decision 3:
-	// 書き込み時にチェック)。開いたばかりの自分は消さず、他を古い順に削る。
-	enforceScrollbackLimit(w.dir, w.limit, path, w.onErr)
+	// 書き込み時にチェック)。走行中のファイルは消さず、他を古い順に削る。
+	//
+	// 守るのは自分1つではない (ADR-0009): 窓が複数あれば他の窓も同時に書いて
+	// いるので、開いたばかりの自分だけを keep にすると、**走行中の隣の窓の
+	// スクロールバックを古い順の巻き添えで消す**。生きている窓ぜんぶを守る。
+	enforceScrollbackLimit(w.dir, w.limit, w.liveFiles(path), w.onErr)
 	return true
 }
 
@@ -190,14 +214,15 @@ func sidFromTaskStarted(line []byte) string {
 }
 
 // enforceScrollbackLimit deletes .ndjson files oldest-first (by mtime) until the
-// total is within limit, never touching keep (the file being written now).
+// total is within limit, never touching keep (the files being written right
+// now — one per open pane, ADR-0009).
 // 削除は劣化であって喪失ではない — 経験 (台帳) は残っている (ADR-0003 Decision 3)。
 //
 // これはセッション境界の soft cap (S-2): 開くこの瞬間に他セッションを削って枠を
 // 空けるだけで、走行中の keep 自身は上限を超えても削らない（書き込み中のファイルを
 // 足元から消さない）。1セッションが単独で上限を超える場合はこの回では収まらず、
 // 次のセッション開始時に古い方として回収される — 較正は実運用の実測で決める。
-func enforceScrollbackLimit(dir string, limit int64, keep string, onErr func(string)) {
+func enforceScrollbackLimit(dir string, limit int64, keep map[string]bool, onErr func(string)) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -235,7 +260,7 @@ func enforceScrollbackLimit(dir string, limit int64, keep string, onErr func(str
 		if total <= limit {
 			break
 		}
-		if f.path == keep {
+		if keep[f.path] {
 			continue
 		}
 		if err := os.Remove(f.path); err != nil {
