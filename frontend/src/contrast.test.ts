@@ -86,13 +86,13 @@ const NON_TEXT_PAIRS: [string, string, string][] = [
   ["border", "bg-app", "塗り無しボタンの輪郭 on 地"],
   ["border", "bg-sidebar", "塗り無しボタンの輪郭 on サイドバー"],
   ["border", "bg-surface", "塗り無しボタンの輪郭 on カード"],
-  ["accent", "bg-app", "アクセント面 on 地"],
-  ["focus", "bg-surface", ":focus の輪郭 on 入力欄の地"],
+  ["accent", "bg-app", "アクセント面・実行中の帯の丸(ADR-0008) on 地"],
+  ["focus", "bg-surface", ":focus の輪郭・締めの待ちの丸(ADR-0008) on 入力欄/カードの地"],
   ["focus", "bg-well", ":focus の輪郭 on 溝（メモリ編集欄）"],
   ["focus", "bg-app", ":focus の輪郭 on 地"],
   ["warning-accent", "bg-well", "残量バー on 溝"],
-  // provider チップの枠と「考え中」のドットは text 系トークンを流用している
-  ["text-muted-aa", "bg-raised", "providerチップの枠・考え中のドット"],
+  // provider チップの枠は text 系トークンを流用している
+  ["text-muted-aa", "bg-raised", "providerチップの枠"],
 ];
 
 for (const [fg, bg, label] of NON_TEXT_PAIRS) {

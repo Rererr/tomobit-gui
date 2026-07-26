@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { ChatMessage } from "../types";
+import type { Activity } from "../activity";
 import { MessageView } from "./ChatMessageView";
+import { ActivityIndicator } from "./ActivityIndicator";
 
 interface ChatPaneProps {
   messages: ChatMessage[];
+  // 動いているあいだだけ非null (ADR-0008)。null は「待つものが無い＝人の番」。
+  activity: Activity | null;
   onSend: (draft: string) => void;
   // 区切り中は空のままの送信ボタンを許す: 締めのFeedback質問への「Enter=まだ
   // 言えない」をキーボード以外でも実行できるようにする（入力欄の無効化は
@@ -19,7 +23,7 @@ interface ChatPaneProps {
 // 吸収する程度の遊び。
 const STICK_TO_BOTTOM_THRESHOLD_PX = 80;
 
-export function ChatPane({ messages, onSend, allowEmptySend, workspace }: ChatPaneProps) {
+export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const [stickToBottom, setStickToBottom] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -36,11 +40,13 @@ export function ChatPane({ messages, onSend, allowEmptySend, workspace }: ChatPa
 
   // 追従中の時だけ自動スクロールする: 読み返しで上にスクロールした最中に
   // ストリームの新着で最下部へ引き戻される問題を避ける（実機で確認された挙動）。
+  // 実行中の帯 (ADR-0008) もログの高さを変えるので同じ追従に乗せる — 出た瞬間に
+  // 画面外へはみ出したのでは、進捗を見せるために置いた帯が見えない。
   useEffect(() => {
     if (stickToBottomRef.current) {
       bottomRef.current?.scrollIntoView();
     }
-  }, [messages]);
+  }, [messages, activity]);
 
   function handleLogScroll() {
     const el = chatLogRef.current;
@@ -94,11 +100,14 @@ export function ChatPane({ messages, onSend, allowEmptySend, workspace }: ChatPa
           （無視されれば既定の"additions text"にフォールバックしうる）— 保証では
           なく期待。全文の読了はブラウズモードでの読み返しに委ねる。 */}
       <div className="chat-log" ref={chatLogRef} onScroll={handleLogScroll} role="log" aria-live="polite" aria-relevant="additions">
-        {messages.length === 0 ? (
+        {messages.length === 0 && activity === null ? (
           <div className="chat-empty-state">Tomoに話しかけてみよう</div>
         ) : (
           messages.map((message) => <MessageView key={message.id} message={message} />)
         )}
+        {/* 進捗が1つも来ないあいだ、動いていることを言う唯一の場所 (ADR-0008)。
+            会話の末尾に置くのは、待っている人の目が既にそこにあるから */}
+        {activity !== null && <ActivityIndicator activity={activity} />}
         <div ref={bottomRef} />
       </div>
       {!stickToBottom && (

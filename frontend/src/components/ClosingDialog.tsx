@@ -66,7 +66,13 @@ export function ClosingDialog({ question, notes, onAnswer, onAbandon }: ClosingD
         )}
 
         {waiting ? (
-          <p className="closing-waiting">Tomoが今回を振り返っている…</p>
+          // 器官が走っている間はここが数十秒黙る。文言だけだと締めの窓が
+          // 固まったのと区別が付かないので、チャット面と同じ脈を添える
+          // (ADR-0008)。答える番が来れば問いに差し替わって消える。
+          <p className="closing-waiting">
+            <span className="chat-activity-pulse" aria-hidden="true" />
+            Tomoが今回を振り返っている…
+          </p>
         ) : (
           <>
             <p className="closing-question">{question.prompt}</p>

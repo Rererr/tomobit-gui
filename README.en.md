@@ -38,6 +38,12 @@ which door you came in through.
   only guarantees an *opportunity* to read — the ADR says so in those words.
   Results are never written to the conversation, the scrollback, or the ledger
   ([ADR-0007](docs/decisions/ADR-0007-run-command-from-chat.md))
+- **Waiting is visible.** The silence between sending and the first line —
+  perception, the decision, the provider process starting — is no longer a frozen
+  window: a strip at the tail of the conversation says `依頼中` / `実行中 ·
+  claude-code` / `区切り中` with the elapsed time. Every transition is derived
+  from the core's own view events; the GUI never guesses and never times out
+  ([ADR-0008](docs/decisions/ADR-0008-waiting-is-visible.md))
 
 There is no user profile feature.
 

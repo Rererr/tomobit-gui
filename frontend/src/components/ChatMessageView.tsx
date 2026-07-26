@@ -169,23 +169,18 @@ function TurnCard({ message }: { message: TurnMessage }) {
           <DecidedDisclosure decided={message.decided} />
         </details>
       )}
-      {message.blocks.length === 0 && message.finished === undefined ? (
-        // turn.started は届いたが最初のブロックがまだ無い間の空白。無反応に
-        // 見えないよう、考え中であることだけ示す（内容は先取りしない）。
-        <div className="chat-turn-thinking" aria-label="考え中">
-          <span />
-          <span />
-          <span />
-        </div>
-      ) : (
-        <div className="chat-turn-blocks">
-          {/* 走行中はそのまま、終わったら作業ログを畳んで答えを前に出す
-              （turnFold.ts）。畳むのは見た目だけで、ブロックは1つも捨てない。 */}
-          {foldWorkBlocks(message.blocks, message.finished !== undefined).map((block, i) =>
-            renderBlock(block, i, message.finished === undefined),
-          )}
-        </div>
-      )}
+      {/* 走行中はそのまま、終わったら作業ログを畳んで答えを前に出す
+          （turnFold.ts）。畳むのは見た目だけで、ブロックは1つも捨てない。
+          最初のブロックが来るまでの空白に置いていた考え中のドットは、
+          会話の末尾の帯 (ADR-0008) に一本化した — 枠の中と末尾で2つ同時に
+          跳ねるより、動いていることを言う場所は1つの方が読める。
+          過去セッションの再生でも同じ: 途中で切れたターンが、開くたびに
+          「まだ考えている」ふりをすることが無くなる。 */}
+      <div className="chat-turn-blocks">
+        {foldWorkBlocks(message.blocks, message.finished !== undefined).map((block, i) =>
+          renderBlock(block, i, message.finished === undefined),
+        )}
+      </div>
       {message.finished !== undefined && (
         <div className="chat-turn-footer">
           {formatDuration(message.finished.durationMs)}

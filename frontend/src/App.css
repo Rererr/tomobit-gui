@@ -541,39 +541,56 @@
   background-color: var(--color-bg-active);
 }
 
-/* ターン開始〜最初のブロックまでの考え中インジケータ */
-.chat-turn-thinking {
+/* 動いているあいだ会話の末尾に出る帯 (ADR-0008)。進捗が1行も来ない沈黙
+   （知覚・判断・Provider起動・区切りの尾部）で、窓が固まったのと区別を付ける
+   唯一の場所。丸は情報を持つのでaccentを使い、文字は注記のトーンに留める。 */
+.chat-activity {
   display: flex;
-  gap: 4px;
-  padding: 4px 0;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--color-text-quiet);
 }
 
-.chat-turn-thinking > span {
-  width: 6px;
-  height: 6px;
+/* 締めダイアログの待ち行 (.closing-waiting) でも同じ脈を使うので、flex の子で
+   なくても寸法が効くよう inline-block で置く。色は面によって変える（下記） */
+.chat-activity-pulse {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background-color: var(--color-text-muted-aa); /* 非text用3:1もわずかに割る実測があり、text用AA明度と同じ値を流用 */
-  animation: chat-thinking-bounce 1.2s infinite ease-in-out;
+  background-color: var(--color-accent);
+  animation: chat-activity-pulse 1.6s infinite ease-in-out;
 }
 
-.chat-turn-thinking > span:nth-child(2) {
-  animation-delay: 0.15s;
+/* 経過は等幅の数字で: 桁が変わるたびに文字が横へ動くと、時計ではなく
+   落ち着かない何かに見える */
+.chat-activity-elapsed {
+  color: var(--color-text-muted-aa);
+  font-variant-numeric: tabular-nums;
 }
 
-.chat-turn-thinking > span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes chat-thinking-bounce {
+@keyframes chat-activity-pulse {
   0%,
-  60%,
   100% {
-    opacity: 0.3;
-    transform: translateY(0);
+    opacity: 0.35;
+    transform: scale(0.8);
   }
-  30% {
+  50% {
     opacity: 1;
-    transform: translateY(-3px);
+    transform: scale(1.15);
+  }
+}
+
+/* 動きを止めても進捗の証拠は消さない: 脈が止まるだけで、秒は刻み続ける。
+   「動いていることを言う」役目を、アニメーションだけに背負わせていない */
+@media (prefers-reduced-motion: reduce) {
+  .chat-activity-pulse {
+    animation: none;
+    opacity: 1;
   }
 }
 
@@ -632,7 +649,7 @@
    表示コストはゼロなので常に出す）。border-colorはtext-muted-aa相当まで
    持ち上げる — border-subtleは.chat-message--tomoの地(bg-raised)との実測が
    1.09:1しかなく、チップの境界として見えていなかった。非text用途でも
-   text系トークンを流用するのは.chat-turn-thinkingのdotと同じ姿勢。 */
+   text系トークンを流用する（実測でAAを満たす明度をそのまま線に使う）。 */
 .chat-turn-provider-chip {
   font-size: 11px;
   color: var(--color-text-muted);
@@ -1879,10 +1896,21 @@
   overflow-wrap: break-word;
 }
 
+/* 締めの待ち行にも同じ脈を置く。ただし色は accent のままにできない: 地
+   (bg-app)では 3:1 を満たす accent が、ダイアログのカード面(bg-surface)では
+   実測 2.87:1 で割る。--color-focus が accent と別トークンで存在するのと
+   同じ理由（塗りに要る暗さと、明るい面の上で見える明度は両立しない）。 */
 .closing-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 4px 0;
   font-size: 13px;
   color: var(--color-text-muted-aa);
+}
+
+.closing-waiting .chat-activity-pulse {
+  background-color: var(--color-focus);
 }
 
 .closing-question {

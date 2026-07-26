@@ -32,6 +32,8 @@ import { budgetToolResult } from "./displayBudget";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
 import { parseBoundaryQuestion } from "./boundaryChoices";
 import type { BoundaryQuestion } from "./boundaryChoices";
+import { advanceActivity, startActivity } from "./activity";
+import type { Activity, ActivityPhase } from "./activity";
 
 let nextMessageId = 0;
 
@@ -71,6 +73,12 @@ function App() {
   const [guiConfig, setGuiConfig] = useState<main.GUIConfig | null>(null);
   const guiConfigRef = useRef<main.GUIConfig | null>(null);
   const [guiConfigError, setGuiConfigError] = useState<string | null>(null);
+  // 「Tomoが動いている」ことの表示 (ADR-0008)。null は人の番。送信・区切りで
+  // 立て、view イベント（ready / await の note / task.finished）で降ろす —
+  // 段の判定は activity.ts の純関数に閉じ、ここは配線だけを持つ。
+  // イベント購読は一度きり(deps [])なので ref で最新を読み、UI は state で描く。
+  const activityRef = useRef<Activity | null>(null);
+  const [activity, setActivityState] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<main.SessionDigest[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   // 初回読み込み中だけ立てる（以後の再読み込みは既存の一覧を見せたまま裏で
@@ -123,6 +131,23 @@ function App() {
   function setBoundary(v: boolean) {
     boundaryRef.current = v;
     setBoundaryActive(v);
+  }
+
+  function setActivity(v: Activity | null) {
+    activityRef.current = v;
+    setActivityState(v);
+  }
+
+  // 送信・区切りの瞬間に待ちを立てる。ここだけが「待ちの始まり」を作る —
+  // 以後の遷移は view イベントから導く（advanceActivity）。
+  function beginActivity(phase: ActivityPhase) {
+    setActivity(startActivity(phase, Date.now()));
+  }
+
+  // 区切りの最中（New chat の /exit・窓の×）に送るものは、次のタスクの依頼では
+  // なく締めの質問への答え。同じ入力欄から出るので、段はここで見分ける。
+  function sendingPhase(): ActivityPhase {
+    return boundaryRef.current || closingRef.current ? "closing" : "requested";
   }
 
   function setClosingMode(v: boolean) {
@@ -209,6 +234,9 @@ function App() {
       setClosingMode(true);
       setClosingQuestion(null);
       setClosingNotes([]);
+      // ×が送った /exit の尾部が走り始めた。ダイアログの裏のチャット面でも
+      // 同じ待ちを言う (ADR-0008) — 待たずに閉じれば、裏の面がそのまま残る。
+      setActivity(startActivity("closing", Date.now()));
     });
     const offExit = EventsOn("chat:exit", (data: ExitInfoData) => {
       // プロセスが終わった以上、溜まりの続きはもう来ない。ここで流し切らないと
@@ -219,6 +247,9 @@ function App() {
       const expected = expectedExitRef.current;
       expectedExitRef.current = false;
       setBoundary(false);
+      // プロセスが終わった以上、待つものはもう無い (ADR-0008)。異常終了で
+      // ready も task.finished も来なかった場合の、待ちの最後の受け皿。
+      setActivity(null);
       ledgerRefreshRef.current.schedule();
       // 締めが終わった＝待つものは無い。×を押した人の意思どおり閉じる
       // （異常終了でも同じ: 待ち続ける相手がもう居ない）。
@@ -308,6 +339,12 @@ function App() {
       return;
     }
     const ev = raw;
+    // 待ちの段は全イベントを通す (ADR-0008): 下の switch が表示のために消費
+    // しない type（ready・decided）こそが段の合図なので、判定は手前に置く。
+    const nextActivity = advanceActivity(activityRef.current, ev, Date.now());
+    if (nextActivity !== activityRef.current) {
+      setActivity(nextActivity);
+    }
     switch (ev.type) {
       case "turn.started": {
         // 溜まりを先に流し切ってから開き枠を差し替える: 後回しにすると、前の
@@ -429,9 +466,14 @@ function App() {
   }
 
   async function sendLine(line: string) {
+    // 待ちは送る前に立てる: 子プロセスの起動（初回送信）はこの await の中で
+    // 起きるので、返ってから立てたのでは一番長い沈黙が空白のままになる。
+    beginActivity(sendingPhase());
     try {
       await SendLine(line);
     } catch (err) {
+      // 渡せていない以上、待つ相手は居ない。
+      setActivity(null);
       appendSystem(`送信に失敗: ${errorMessage(err)}`);
     }
   }
@@ -453,6 +495,9 @@ function App() {
     if (started) {
       expectedExitRef.current = true;
       setBoundary(true);
+      // 区切りの尾部（Feedback → 知覚 → 質問 → 鏡）はここから走る。宣言の1行の
+      // 後にまた沈黙が続くので、走っていることは帯が言い続ける (ADR-0008)。
+      beginActivity("closing");
       // 区切り中も入力は生かす: 直後に届くTomoの締めの質問（Feedback）への答えは
       // この入力欄から送る。代わりに「新しい話はまだ届かない」ことを言葉で伝える。
       // この文に完了表示の「区切った」を含めない: 完了を文字列で探す目（人も
@@ -595,6 +640,7 @@ function App() {
         <div style={{ display: activePane === "chat" ? "contents" : "none" }}>
           <ChatPane
             messages={messages}
+            activity={activity}
             onSend={handleSend}
             allowEmptySend={boundaryActive}
             workspace={
