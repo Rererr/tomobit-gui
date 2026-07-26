@@ -65,6 +65,62 @@ type GUIConfig struct {
 	// 書き残す（bool のゼロ値がそのまま既定になるのでポインタは要らない）。
 	SidebarTomoCollapsed  bool `json:"sidebar_tomo_collapsed,omitempty"`
 	SidebarUsageCollapsed bool `json:"sidebar_usage_collapsed,omitempty"`
+
+	// Panes は会話面の窓 (ADR-0009)。1〜4個で、順序がそのまま画面の並び。
+	// キー無し＝旧来の1窓構成で、PaneList が上の WorkingDir / ReadDirs から
+	// 1つ合成する — 既存の gui.json が黙って空の画面になることは無い。
+	//
+	// 上の WorkingDir / ReadDirs は消していない: 旧構成の読み手として生き続け、
+	// 窓を保存した瞬間に Panes が正になる（ADR-0009 が ADR-0004 Decision 1/2 を
+	// 「窓ごと」へ改訂したのは置き場の話で、旧い置き場を壊す話ではない）。
+	Panes []PaneConfig `json:"panes,omitempty"`
+}
+
+// MaxPanes は画面の物理 (ADR-0009 Decision 2): 1・2・3・4分割まで。
+const MaxPanes = 4
+
+// PaneConfig is one window's wiring. 会話そのもの（ログ・待ち・締め）は
+// プロセスとフロントが持ち、ここに残るのは「次に起動するとき、どこで働くか」
+// だけ — 配線であって経験ではない（本体 ADR-0047 / ADR-0004 Decision 1）。
+type PaneConfig struct {
+	ID         string   `json:"id"`
+	WorkingDir string   `json:"working_dir,omitempty"`
+	ReadDirs   []string `json:"read_dirs,omitempty"`
+}
+
+// PaneList returns the panes to open, always at least one.
+//
+// 旧構成（panes キー無し）は、上の WorkingDir / ReadDirs を持つ窓1つへ写す。
+// 「キー無し＝既定」を他のノブと同じに保つための移行で、保存されるまで
+// gui.json には1バイトも書かない。
+func (c GUIConfig) PaneList() []PaneConfig {
+	if len(c.Panes) == 0 {
+		return []PaneConfig{{ID: mainPane, WorkingDir: c.WorkingDir, ReadDirs: c.ReadDirs}}
+	}
+	if len(c.Panes) > MaxPanes {
+		return c.Panes[:MaxPanes]
+	}
+	return c.Panes
+}
+
+// PaneFor returns one pane's wiring, falling back to the first pane when the id
+// is unknown. 未知の id で起動を止めないのは、窓の構成と走っているプロセスが
+// 一瞬ずれる（窓を閉じた直後の在庫イベント等）ことがあるため — そこで起動を
+// 失敗させると、直前まで使えていた窓が黙って死ぬ。
+func (c GUIConfig) PaneFor(id string) PaneConfig {
+	panes := c.PaneList()
+	for _, p := range panes {
+		if p.ID == id {
+			return p
+		}
+	}
+	return panes[0]
+}
+
+// NormalizedReadDirs on a pane is GUIConfig's, applied to this window's list:
+// blanks and repeats dropped, order kept.
+func (p PaneConfig) NormalizedReadDirs() []string {
+	return normalizeReadDirs(p.ReadDirs)
 }
 
 // ChatProvider resolves the provider choice for the chat launch (本体
@@ -86,9 +142,16 @@ func (c GUIConfig) ChatProvider() string {
 // 正規化は読み手側に置く: 同じ --add-dir を二度積んでも害はないが、UI の
 // チップも argv も「一度言えば一度だけ」の方が読める。
 func (c GUIConfig) NormalizedReadDirs() []string {
-	seen := make(map[string]bool, len(c.ReadDirs))
-	dirs := make([]string, 0, len(c.ReadDirs))
-	for _, d := range c.ReadDirs {
+	return normalizeReadDirs(c.ReadDirs)
+}
+
+// normalizeReadDirs is the one copy of the rule, shared by the legacy
+// top-level list and each pane's (ADR-0009): blanks out, repeats out, order
+// kept. Two copies would drift the day one of them learns a new rule.
+func normalizeReadDirs(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	dirs := make([]string, 0, len(in))
+	for _, d := range in {
 		d = strings.TrimSpace(d)
 		if d == "" || seen[d] {
 			continue
