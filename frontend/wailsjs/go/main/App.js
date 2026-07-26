@@ -78,6 +78,10 @@ export function SendLine(arg1, arg2) {
   return window['go']['main']['App']['SendLine'](arg1, arg2);
 }
 
+export function SetVerdict(arg1, arg2) {
+  return window['go']['main']['App']['SetVerdict'](arg1, arg2);
+}
+
 export function SetWorkspace(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetWorkspace'](arg1, arg2, arg3);
 }

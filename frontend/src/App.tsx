@@ -307,7 +307,14 @@ function App() {
         </div>
         {activePane === "memory" && <MemoryPane tomoStatus={tomoStatus} />}
         {activePane === "session" && selectedSession !== null && (
-          <SessionPane sessionId={selectedSession} />
+          <SessionPane
+            sessionId={selectedSession}
+            onLedgerChanged={() => {
+              // 判定は台帳を書き換えるので、一覧の印も追随させる
+              // (本体 ADR-0055 / GUI ADR-0010)。
+              void refreshLedgerViews();
+            }}
+          />
         )}
       </main>
     </div>

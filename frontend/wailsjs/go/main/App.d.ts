@@ -40,4 +40,6 @@ export function SaveGUIConfig(arg1:main.GUIConfig):Promise<void>;
 
 export function SendLine(arg1:string,arg2:string):Promise<void>;
 
+export function SetVerdict(arg1:string,arg2:string):Promise<main.WriteResult>;
+
 export function SetWorkspace(arg1:string,arg2:string,arg3:Array<string>):Promise<main.WorkspaceUpdate>;

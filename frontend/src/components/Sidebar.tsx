@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import type { main } from "../../wailsjs/go/models";
 import type { PaneId } from "../types";
+import { verdictMark } from "../verdict";
 import { SidebarSection } from "./SidebarSection";
 import { TomoPresence } from "./TomoPresence";
 import { UsagePanel } from "./UsagePanel";
@@ -61,6 +62,8 @@ function sessionDateGroupLabel(ms: number): string {
 }
 
 // 状態の注記は目立つ例外だけ: finished が既定の姿なので書かない。
+// 判定 (本体 ADR-0055) も同じ扱い — 置かれている方が例外なので印を出す。
+// 置けるのは詳細からで、ここは「どれを判定したか」を思い出すための印だけ。
 function sessionMeta(s: main.SessionDigest): string {
   const parts = [formatSessionDate(s.start_ts), `${s.turns}ターン`];
   if (s.status === "open") {
@@ -70,6 +73,10 @@ function sessionMeta(s: main.SessionDigest): string {
   }
   if (s.source === "learning") {
     parts.push("learning");
+  }
+  const mark = verdictMark(s.verdict);
+  if (mark !== "") {
+    parts.push(mark);
   }
   return parts.join(" ・");
 }

@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GetSessionDigest, GetSessionScrollback } from "../../wailsjs/go/main/App";
 import type { main } from "../../wailsjs/go/models";
 import type { ChatMessage } from "../types";
 import { foldViewEvents } from "../viewFold";
 import { Markdown } from "./Markdown";
 import { MessageView } from "./ChatMessageView";
+import { VerdictBar } from "./VerdictBar";
 import { errorMessage } from "../errorMessage";
 
 interface SessionPaneProps {
   sessionId: string;
+  /** 判定などで台帳が変わったとき、サイドバー側の導出Viewも読み直させる。 */
+  onLedgerChanged: () => void;
 }
 
 // ヘッダ（開始時刻・状態）は常に台帳ダイジェストから取り、本文はスクロール
@@ -68,12 +71,24 @@ function statusLabel(status: string): string {
   return "進行中";
 }
 
-export function SessionPane({ sessionId }: SessionPaneProps) {
+export function SessionPane({ sessionId, onLedgerChanged }: SessionPaneProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // 判定を置いたあと、この窓自身も台帳を読み直す — ボタンの押下状態は
+  // ローカルに持たず、常に台帳が正である（判定は本体が断ることもあるので、
+  // 押した通りに描くと嘘になりうる）。
+  const [reloadKey, setReloadKey] = useState(0);
+  // 同じセッションを読み直すだけの時は白紙にしない。実機で踏んだ:
+  // 判定 → onChanged → 読み直し → loading で loaded の枝ごと消える、で
+  // VerdictBar が unmount され、**本体が返した1行（断り文を含む）が
+  // 一瞬で消えていた**。「押した通りに描かず台帳を読み直す」(GUI ADR-0010
+  // Decision 3) は、読み直しの間も画面を保つことまで含む。
+  const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
     let stale = false;
-    setState({ kind: "loading" });
+    if (loadedFor.current !== sessionId) {
+      setState({ kind: "loading" });
+    }
     // ダイジェスト（ヘッダ＋全文が無いときの本文）とスクロールバック（全文）を
     // 並行して取る。GetSessionScrollback は台帳照会を兼ね、忘却済み sid の
     // 全文を削除してから「無い」と返す（ADR-0003 Decision 2）ので、ここを通る
@@ -92,6 +107,7 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
           }
         }
         const transcript = scrollback.exists ? foldViewEvents(scrollback.events, userTurnsByN) : null;
+        loadedFor.current = sessionId;
         setState({ kind: "loaded", detail, transcript });
       })
       .catch((err: unknown) => {
@@ -102,7 +118,7 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
     return () => {
       stale = true;
     };
-  }, [sessionId]);
+  }, [sessionId, reloadKey]);
 
   function renderDigestRow(row: ViewRow, i: number) {
     switch (row.kind) {
@@ -158,6 +174,16 @@ export function SessionPane({ sessionId }: SessionPaneProps) {
               {new Date(state.detail.start_ts).toLocaleString()} ・{statusLabel(state.detail.status)}
             </span>
           </div>
+          {/* 第2層の判定 (本体 ADR-0055)。常設の問いではなく、人が自分で
+              セッションを開いた時にだけ目に入る器官である */}
+          <VerdictBar
+            sessionId={state.detail.session_id}
+            current={state.detail.verdict}
+            onChanged={() => {
+              setReloadKey((n) => n + 1);
+              onLedgerChanged();
+            }}
+          />
           {state.transcript !== null ? (
             <>
               <p className="session-pane-note">

@@ -390,6 +390,7 @@ export namespace main {
 	    start_ts: number;
 	    status: string;
 	    items: DigestItem[];
+	    verdict: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionDetail(source);
@@ -401,6 +402,7 @@ export namespace main {
 	        this.start_ts = source["start_ts"];
 	        this.status = source["status"];
 	        this.items = this.convertValues(source["items"], DigestItem);
+	        this.verdict = source["verdict"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -429,6 +431,7 @@ export namespace main {
 	    turns: number;
 	    status: string;
 	    source: string;
+	    verdict: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionDigest(source);
@@ -443,6 +446,7 @@ export namespace main {
 	        this.turns = source["turns"];
 	        this.status = source["status"];
 	        this.source = source["source"];
+	        this.verdict = source["verdict"];
 	    }
 	}
 	export class SessionList {

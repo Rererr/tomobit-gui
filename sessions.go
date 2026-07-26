@@ -23,6 +23,11 @@ type SessionDigest struct {
 	Turns     int    `json:"turns"`  // task.started + task.turn の数
 	Status    string `json:"status"` // "finished" | "cancelled" | "open"
 	Source    string `json:"source"` // "production" | "learning" | ""
+	// Verdict は人がこのセッションに置いた第2層の判定 (本体 ADR-0055)。
+	// "up" | "down" | "" で、"" は「まだ判定していない」と「取り消した」の
+	// 両方 — 台帳では別の出来事だが、いまの状態としては同じである。
+	// 一覧に出すのは印だけで、判定そのものは詳細から置く。
+	Verdict string `json:"verdict"`
 }
 
 // SessionList mirrors MemoryView's Exists semantics: 台帳がまだ無いのか、
@@ -45,6 +50,9 @@ type SessionDetail struct {
 	StartTS   int64        `json:"start_ts"`
 	Status    string       `json:"status"`
 	Items     []DigestItem `json:"items"`
+	// Verdict は SessionDigest のそれと同じ — 詳細を開いた人が、いま何が
+	// 置かれているかを見てから置き換えたり取り消したりできるように。
+	Verdict string `json:"verdict"`
 }
 
 // maxSessions caps the sidebar list the way experiences cap at 200 —
@@ -74,7 +82,7 @@ func (a *App) GetSessions() (SessionList, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`SELECT session_id, ts, type, payload FROM events
-		WHERE type IN ('task.started', 'task.turn', 'task.finished', 'task.cancelled')
+		WHERE type IN ('task.started', 'task.turn', 'task.finished', 'task.cancelled', 'user.verdict')
 		ORDER BY session_id, seq`)
 	if err != nil {
 		return SessionList{}, fmt.Errorf("events の読み取りに失敗: %w", err)
@@ -112,6 +120,11 @@ func (a *App) GetSessions() (SessionList, error) {
 			d.Status = "finished"
 		case "task.cancelled":
 			d.Status = "cancelled"
+		case "user.verdict":
+			// 最後が勝つ (本体 ADR-0055): 判定を変えたこと自体も台帳に残るが、
+			// 一覧が見せるのは「いまの判定」である。"clear" は取り消しなので
+			// 印を外す — 本体の parseDeterministic が "" へ写すのと同じ扱い。
+			d.Verdict = currentVerdict(payloadString(payload, "verdict"))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -192,9 +205,25 @@ func (a *App) GetSessionDigest(sessionID string) (SessionDetail, error) {
 			detail.Status = "finished"
 		case "task.cancelled":
 			detail.Status = "cancelled"
+		case "user.verdict":
+			detail.Verdict = currentVerdict(payloadString(payload, "verdict"))
 		}
 	}
 	return detail, rows.Err()
+}
+
+// currentVerdict maps one user.verdict payload to what the screen should show.
+// "clear" は取り消しなので "" になり、未知の語も "" になる — 本体の語彙が
+// 増えたとき、GUIが知らない判定を勝手に 👍 か 👎 のどちらかに描くよりは、
+// 「まだ何も置かれていない」と見えている方が嘘が小さい（ADR-0032 の
+// 消費者規律: 知らないものは無視する）。
+func currentVerdict(word string) string {
+	switch word {
+	case "up", "down":
+		return word
+	default:
+		return ""
+	}
 }
 
 // payloadString reads one string key out of an event payload. 壊れたJSONや

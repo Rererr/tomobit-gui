@@ -2149,3 +2149,67 @@
 .permission-btn-grant:hover {
   background-color: var(--color-accent-hover);
 }
+
+/* ---- 第2層の判定 (本体 ADR-0055 / GUI ADR-0010) ---- */
+
+/* 過去セッションのヘッダの下に置く帯。会話の本文より前に出るが、目立たせは
+   しない —「気が向いた時」の器官であって、開くたびに答えを迫るものではない。 */
+.verdict-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-input);
+  border-radius: 8px;
+  background-color: var(--color-bg-raised);
+}
+
+.verdict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.verdict-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--color-border-input);
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.verdict-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-surface);
+}
+.verdict-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* いま置かれている判定だけを塗る。👍 と 👎 は同じ大きさで並ぶ —
+   押しやすさで判断を誘導しない（許可モーダルと同じ姿勢）。 */
+.verdict-btn--active {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-text-bright);
+}
+.verdict-btn--active:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+.verdict-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted-aa);
+}
+
+/* 本体が返した1行をそのまま出す欄。断り文もここに出る。 */
+.verdict-result {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.verdict-result--error {
+  color: var(--color-warning);
+}
