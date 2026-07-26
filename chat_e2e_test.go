@@ -46,7 +46,7 @@ func TestE2E_実Providerへの1ターンがviewストリームで届き区切り
 		defer mu.Unlock()
 		switch name {
 		case eventChatView:
-			events = append(events, stamped{time.Now(), data[0].(map[string]any)})
+			events = append(events, stamped{time.Now(), data[0].(ViewEvent).Event})
 		case eventChatExit:
 			exited <- data[0].(ExitInfo)
 		}
@@ -81,19 +81,19 @@ func TestE2E_実Providerへの1ターンがviewストリームで届き区切り
 
 	// 最初のターンは複数行ドラフト: 末尾 `\` 継続でエンコードされ、本体が1ターンに
 	// 繋ぎ直す（ADR-0032 Decision 2）ことの実環境検証を兼ねる。
-	if err := app.SendLine("1たす1の答えを\n半角数字ひとつだけで答えて"); err != nil {
+	if err := app.SendLine(mainPane, "1たす1の答えを\n半角数字ひとつだけで答えて"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(`text イベントの "2"`, containsText("text", "text", "2"), 180*time.Second)
 
-	if err := app.SendLine("/exit"); err != nil {
+	if err := app.SendLine(mainPane, "/exit"); err != nil {
 		t.Fatal(err)
 	}
 	// 区切りの尾部: Feedback 質問は await:true の note で届く。Enter（=まだ言えない）で答える。
 	waitFor(`await:true の note "どうだった"`, func(ev map[string]any) bool {
 		return ev["type"] == "note" && ev["await"] == true && strings.Contains(toString(ev["text"]), "どうだった")
 	}, 30*time.Second)
-	if err := app.SendLine(""); err != nil {
+	if err := app.SendLine(mainPane, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,7 +157,7 @@ func TestE2E_transcript_cache_ONで実viewストリームが全文追記され�
 		defer mu.Unlock()
 		switch name {
 		case eventChatView:
-			if ev, ok := data[0].(map[string]any); ok && ev["type"] == "text" {
+			if v, ok := data[0].(ViewEvent); ok && v.Event["type"] == "text" {
 				sawText = true
 			}
 		case eventChatExit:
@@ -165,7 +165,7 @@ func TestE2E_transcript_cache_ONで実viewストリームが全文追記され�
 		}
 	}
 
-	if err := app.SendLine("1たす1の答えを半角数字ひとつだけで答えて"); err != nil {
+	if err := app.SendLine(mainPane, "1たす1の答えを半角数字ひとつだけで答えて"); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(180 * time.Second)
@@ -181,10 +181,10 @@ func TestE2E_transcript_cache_ONで実viewストリームが全文追記され�
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if err := app.SendLine("/exit"); err != nil {
+	if err := app.SendLine(mainPane, "/exit"); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.SendLine(""); err != nil {
+	if err := app.SendLine(mainPane, ""); err != nil {
 		t.Fatal(err)
 	}
 	select {

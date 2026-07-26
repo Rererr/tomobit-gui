@@ -6,6 +6,10 @@ export function AbandonBoundary() {
   return window['go']['main']['App']['AbandonBoundary']();
 }
 
+export function AddPane() {
+  return window['go']['main']['App']['AddPane']();
+}
+
 export function AmendExperience(arg1) {
   return window['go']['main']['App']['AmendExperience'](arg1);
 }
@@ -14,8 +18,12 @@ export function ChooseDirectory(arg1, arg2) {
   return window['go']['main']['App']['ChooseDirectory'](arg1, arg2);
 }
 
-export function EndTask() {
-  return window['go']['main']['App']['EndTask']();
+export function ClosePane(arg1) {
+  return window['go']['main']['App']['ClosePane'](arg1);
+}
+
+export function EndTask(arg1) {
+  return window['go']['main']['App']['EndTask'](arg1);
 }
 
 export function ForgetExperiences(arg1) {
@@ -28,6 +36,10 @@ export function GetGUIConfig() {
 
 export function GetMemoryView() {
   return window['go']['main']['App']['GetMemoryView']();
+}
+
+export function GetPanes() {
+  return window['go']['main']['App']['GetPanes']();
 }
 
 export function GetSessionDigest(arg1) {
@@ -62,10 +74,10 @@ export function SaveGUIConfig(arg1) {
   return window['go']['main']['App']['SaveGUIConfig'](arg1);
 }
 
-export function SendLine(arg1) {
-  return window['go']['main']['App']['SendLine'](arg1);
+export function SendLine(arg1, arg2) {
+  return window['go']['main']['App']['SendLine'](arg1, arg2);
 }
 
-export function SetWorkspace(arg1, arg2) {
-  return window['go']['main']['App']['SetWorkspace'](arg1, arg2);
+export function SetWorkspace(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetWorkspace'](arg1, arg2, arg3);
 }

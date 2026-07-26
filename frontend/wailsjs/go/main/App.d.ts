@@ -4,17 +4,23 @@ import {main} from '../models';
 
 export function AbandonBoundary():Promise<void>;
 
+export function AddPane():Promise<Array<main.PaneConfig>>;
+
 export function AmendExperience(arg1:main.AmendRequest):Promise<main.WriteResult>;
 
 export function ChooseDirectory(arg1:string,arg2:string):Promise<string>;
 
-export function EndTask():Promise<boolean>;
+export function ClosePane(arg1:string):Promise<boolean>;
+
+export function EndTask(arg1:string):Promise<boolean>;
 
 export function ForgetExperiences(arg1:Array<string>):Promise<main.WriteResult>;
 
 export function GetGUIConfig():Promise<main.GUIConfig>;
 
 export function GetMemoryView():Promise<main.MemoryView>;
+
+export function GetPanes():Promise<Array<main.PaneConfig>>;
 
 export function GetSessionDigest(arg1:string):Promise<main.SessionDetail>;
 
@@ -32,6 +38,6 @@ export function RunCommand(arg1:string):Promise<main.CommandRun>;
 
 export function SaveGUIConfig(arg1:main.GUIConfig):Promise<void>;
 
-export function SendLine(arg1:string):Promise<void>;
+export function SendLine(arg1:string,arg2:string):Promise<void>;
 
-export function SetWorkspace(arg1:string,arg2:Array<string>):Promise<main.WorkspaceUpdate>;
+export function SetWorkspace(arg1:string,arg2:string,arg3:Array<string>):Promise<main.WorkspaceUpdate>;

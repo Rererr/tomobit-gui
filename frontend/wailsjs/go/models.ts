@@ -138,6 +138,22 @@ export namespace main {
 	        this.outcome = source["outcome"];
 	    }
 	}
+	export class PaneConfig {
+	    id: string;
+	    working_dir?: string;
+	    read_dirs?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PaneConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.working_dir = source["working_dir"];
+	        this.read_dirs = source["read_dirs"];
+	    }
+	}
 	export class GUIConfig {
 	    speaking_style: string;
 	    face_enabled?: boolean;
@@ -148,6 +164,7 @@ export namespace main {
 	    run_command?: boolean;
 	    sidebar_tomo_collapsed?: boolean;
 	    sidebar_usage_collapsed?: boolean;
+	    panes?: PaneConfig[];
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIConfig(source);
@@ -164,7 +181,26 @@ export namespace main {
 	        this.run_command = source["run_command"];
 	        this.sidebar_tomo_collapsed = source["sidebar_tomo_collapsed"];
 	        this.sidebar_usage_collapsed = source["sidebar_usage_collapsed"];
+	        this.panes = this.convertValues(source["panes"], PaneConfig);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class GrowthGate {
 	    name: string;
@@ -273,6 +309,7 @@ export namespace main {
 	        this.marker = source["marker"];
 	    }
 	}
+	
 	export class ProviderUsage {
 	    provider: string;
 	    runs: number;

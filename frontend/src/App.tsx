@@ -2,63 +2,40 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { Sidebar } from "./components/Sidebar";
 import { GrowthDisclosure } from "./components/GrowthDisclosure";
-import { ChatPane } from "./components/ChatPane";
+import { ChatPaneHost } from "./components/ChatPaneHost";
 import { SettingsPane } from "./components/SettingsPane";
-import { WorkspaceBar } from "./components/WorkspaceBar";
 import { MemoryPane } from "./components/MemoryPane";
 import { SessionPane } from "./components/SessionPane";
-import { ClosingDialog } from "./components/ClosingDialog";
-import { RunCommandProvider } from "./components/RunCommandProvider";
 import {
-  AbandonBoundary,
-  EndTask,
+  AddPane,
+  ClosePane,
   GetGUIConfig,
+  GetPanes,
   GetSessions,
   GetSpriteSheet,
   GetTomoStatus,
-  QuitNow,
-  RunCommand,
   SaveGUIConfig,
-  SendLine,
   SetWorkspace,
 } from "../wailsjs/go/main/App";
-import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { main } from "../wailsjs/go/models";
-import type { ChatMessage, DecidedEvent, PaneId, StreamChannel, TurnBlock } from "./types";
-import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
+import type { PaneId } from "./types";
 import { errorMessage } from "./errorMessage";
-import { appendBlocksTo } from "./appendBlocks";
-import { budgetToolResult } from "./displayBudget";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
-import { parseBoundaryQuestion } from "./boundaryChoices";
-import type { BoundaryQuestion } from "./boundaryChoices";
-import { advanceActivity, startActivity } from "./activity";
-import type { Activity, ActivityPhase } from "./activity";
-
-let nextMessageId = 0;
+import { paneGridClass, sharedPlaces } from "./panes";
 
 // task.finished/task.cancelled と chat:exit の実測ずれ（一桁〜数十ms）より
 // 十分大きく、境界直後の一覧更新という体感（人には知覚できない背景更新の
 // 遅延）を壊さない値。詳細は ledgerRefreshCoalescer.ts。
 const LEDGER_REFRESH_DEBOUNCE_MS = 200;
 
-function createMessageId(): string {
-  nextMessageId += 1;
-  return `msg-${nextMessageId}`;
-}
-
-interface OutChunkData {
-  channel: StreamChannel;
-  text: string;
-}
-
-interface ExitInfoData {
-  error: string;
-}
-
 function App() {
   const [activePane, setActivePane] = useState<PaneId>("chat");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // 会話面の窓 (ADR-0009)。Go が正本を持ち、ここはその写し — 窓の生死は
+  // セッションの生死なので、追加も削除も Go を通す。
+  const [panes, setPanes] = useState<main.PaneConfig[]>([]);
+  // 締めが走り始めた窓。chat:exit を待ってから実際に畳む — 器官が答えを
+  // 聞き終える前に画面ごと消すと、ADR-0005 が直した「答えられない締め」に戻る。
+  const closingPanesRef = useRef<Set<string>>(new Set());
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
   // 姿の資産は動かないので起動時に一度だけ読む（本体 ADR-0048 Decision 2）。
@@ -73,53 +50,11 @@ function App() {
   const [guiConfig, setGuiConfig] = useState<main.GUIConfig | null>(null);
   const guiConfigRef = useRef<main.GUIConfig | null>(null);
   const [guiConfigError, setGuiConfigError] = useState<string | null>(null);
-  // 「Tomoが動いている」ことの表示 (ADR-0008)。null は人の番。送信・区切りで
-  // 立て、view イベント（ready / await の note / task.finished）で降ろす —
-  // 段の判定は activity.ts の純関数に閉じ、ここは配線だけを持つ。
-  // イベント購読は一度きり(deps [])なので ref で最新を読み、UI は state で描く。
-  const activityRef = useRef<Activity | null>(null);
-  const [activity, setActivityState] = useState<Activity | null>(null);
   const [sessions, setSessions] = useState<main.SessionDigest[]>([]);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   // 初回読み込み中だけ立てる（以後の再読み込みは既存の一覧を見せたまま裏で
   // 差し替える — 会話中の自動リフレッシュのたびに空表示へ点滅させない）。
   const [sessionsLoading, setSessionsLoading] = useState(true);
-  // New chat が /exit を送ってから完了表示までの「区切り中」。イベント購読は
-  // 一度きり(deps [])なので ref で最新値を読み、UI（空送信ボタンの活性化）は
-  // state で再描画する — 二重管理は setBoundary に閉じ込める。
-  const boundaryRef = useRef(false);
-  const [boundaryActive, setBoundaryActive] = useState(false);
-  // 「New chat が /exit を送った」ことの記憶。chat:exit の完了表示（区切った/
-  // 終了した）の判別だけに使う。boundary（空送信の許可）とは寿命が違う —
-  // boundary は task.finished（境界の器官が済んだ瞬間）で先に閉じるが、
-  // その後に来る chat:exit はまだ「期待された終了」なので別々に持つ。
-  const expectedExitRef = useRef(false);
-  // 現在開いている Tomo のターン枠の id。turn.started で開き、turn.finished で閉じる。
-  // text/tool/tool_result/error はこの id のターンへ追記する（購読は一度きりなので
-  // ref で最新の開き枠を追う）。
-  const openTurnIdRef = useRef<string | null>(null);
-  // 到着したブロックの溜め場と、フレーム1回のフラッシュ予約 (2026-07-26 の
-  // 応答停止への修正 / appendBlocks.ts)。到着ごとに setMessages すると、1チャンク
-  // につきログ全体の再描画と scrollIntoView の同期レイアウトが走り、長いターンで
-  // 二次曲線に乗って窓が固まる。受信はここへ積むだけにして、描画はフレームに
-  // 1回へ畳む。
-  const pendingBlocksRef = useRef<TurnBlock[]>([]);
-  const flushHandleRef = useRef<number | null>(null);
-  // 窓の×が始めた締め (ADR-0005)。Go の beforeClose が /exit を送って閉窓を
-  // 差し止め、app:closing でこちらへ知らせる。以後 await の note はチャット面
-  // ではなくこのダイアログの問いになり、chat:exit で閉じる。イベント購読は
-  // 一度きり(deps [])なので ref で最新を読み、UI は state で再描画する。
-  const closingRef = useRef(false);
-  const [closing, setClosing] = useState(false);
-  const [closingQuestion, setClosingQuestion] = useState<BoundaryQuestion | null>(null);
-  const [closingNotes, setClosingNotes] = useState<string[]>([]);
-  // decided（本体 ADR-0040）は自分の task.started より先に届きうるので、
-  // sid が一致するまで一時的に持つ（"最も直近の decided" を仮採用し、
-  // sid 不一致なら黙って捨てる — 記帳とGUIの相関はsidだけが正）。
-  const pendingDecidedRef = useRef<DecidedEvent | null>(null);
-  // task.started で sid が一致した decided。同一タスク内で開く turn 全てに
-  // 付与する（GUIは1プロセス1タスクなので次の decided が来るまで有効）。
-  const activeDecidedRef = useRef<DecidedEvent | null>(null);
   // task.finished/task.cancelled と chat:exit は同一境界の別の観測なので、
   // 両方から呼ばれても refreshLedgerViews は1回に畳む（ledgerRefreshCoalescer）。
   const ledgerRefreshRef = useRef(
@@ -127,34 +62,6 @@ function App() {
       void refreshLedgerViews();
     }, LEDGER_REFRESH_DEBOUNCE_MS),
   );
-
-  function setBoundary(v: boolean) {
-    boundaryRef.current = v;
-    setBoundaryActive(v);
-  }
-
-  function setActivity(v: Activity | null) {
-    activityRef.current = v;
-    setActivityState(v);
-  }
-
-  // 送信・区切りの瞬間に待ちを立てる。ここだけが「待ちの始まり」を作る —
-  // 以後の遷移は view イベントから導く（advanceActivity）。
-  function beginActivity(phase: ActivityPhase) {
-    setActivity(startActivity(phase, Date.now()));
-  }
-
-  // 区切りの最中（New chat の /exit・窓の×）に送るものは、次のタスクの依頼では
-  // なく締めの質問への答え。同じ入力欄から出るので、段はここで見分ける。
-  function sendingPhase(): ActivityPhase {
-    return boundaryRef.current || closingRef.current ? "closing" : "requested";
-  }
-
-  function setClosingMode(v: boolean) {
-    closingRef.current = v;
-    setClosing(v);
-  }
-
   function applyGUIConfig(c: main.GUIConfig) {
     guiConfigRef.current = c;
     setGuiConfig(c);
@@ -185,6 +92,12 @@ function App() {
   // プロセス終了時（= セッション境界 — 記帳・知覚が走りステージも一覧も
   // 動きうる瞬間）だけ: ポーリングはしない（低負荷、ADR-0001 Decision 3 と
   // 同じ「開くたびに読む」姿勢）。
+  // ヘッダ・姿の取得失敗はどの窓の出来事でもない (Tomo 一匹に属する導出View)。
+  // 会話面へ流し込む相手が一意でなくなったので、人間向け面へ出す。
+  function appendDiagnostic(text: string) {
+    console.error(text.trimEnd());
+  }
+
   async function refreshLedgerViews() {
     // allSettled で独立に受ける: ヘッダ(サブプロセス呼び出し — 旧本体や
     // バイナリ不在で失敗しうる)の失敗は素の「Tomo」への局所的劣化に留め
@@ -195,7 +108,7 @@ function App() {
       setTomoStatus(status.value);
     } else {
       setTomoStatus(null);
-      appendStderr(`ヘッダの取得に失敗: ${errorMessage(status.reason)}\n`);
+      appendDiagnostic(`ヘッダの取得に失敗: ${errorMessage(status.reason)}\n`);
     }
     if (list.status === "fulfilled") {
       setSessions(list.value.sessions);
@@ -212,350 +125,83 @@ function App() {
     try {
       setSprite(await GetSpriteSheet());
     } catch (err) {
-      appendStderr(`Tomoの姿の取得に失敗: ${errorMessage(err)}\n`);
+      appendDiagnostic(`Tomoの姿の取得に失敗: ${errorMessage(err)}\n`);
     }
   }
 
   useEffect(() => {
+    // 起動時に一度だけ読むもの (ADR-0048 Decision 2 / ADR-0001 Decision 3)。
+    // チャットのストリーム購読は窓ごとに useChatSession が張る。
     void refreshLedgerViews();
     void loadGUIConfig();
     void loadSprite();
-    const offView = EventsOn("chat:view", (data: unknown) => {
-      handleViewEvent(data);
-    });
-    // stderr（契約外の人間向け診断）は従来どおりチャンクで届く。
-    const offOut = EventsOn("chat:out", (data: OutChunkData) => {
-      if (data.channel === "stderr") {
-        appendStderr(data.text);
-      }
-    });
-    // 窓の×が締めを始めた (ADR-0005): 以後 await の note はダイアログの問いへ。
-    const offClosing = EventsOn("app:closing", () => {
-      setClosingMode(true);
-      setClosingQuestion(null);
-      setClosingNotes([]);
-      // ×が送った /exit の尾部が走り始めた。ダイアログの裏のチャット面でも
-      // 同じ待ちを言う (ADR-0008) — 待たずに閉じれば、裏の面がそのまま残る。
-      setActivity(startActivity("closing", Date.now()));
-    });
-    const offExit = EventsOn("chat:exit", (data: ExitInfoData) => {
-      // プロセスが終わった以上、溜まりの続きはもう来ない。ここで流し切らないと
-      // 最後のターンの末尾が画面に出ないまま残る。
-      flushPendingBlocks();
-      // 異常終了は区切り中でも隠さない: /exit の尾部（Feedback → 知覚）が
-      // 失敗したのに「区切った」と言うのはエラーの握り潰しになる。
-      const expected = expectedExitRef.current;
-      expectedExitRef.current = false;
-      setBoundary(false);
-      // プロセスが終わった以上、待つものはもう無い (ADR-0008)。異常終了で
-      // ready も task.finished も来なかった場合の、待ちの最後の受け皿。
-      setActivity(null);
-      ledgerRefreshRef.current.schedule();
-      // 締めが終わった＝待つものは無い。×を押した人の意思どおり閉じる
-      // （異常終了でも同じ: 待ち続ける相手がもう居ない）。
-      if (closingRef.current) {
-        void QuitNow();
-        return;
-      }
-      if (data.error !== "") {
-        appendSystem(`チャットのプロセスが異常終了した: ${data.error} — 次の送信で再開する`);
-        return;
-      }
-      appendSystem(
-        expected
-          ? "区切った — 次の送信から新しいチャットが始まる"
-          : "チャットのプロセスが終了した — 次の送信で再開する",
-      );
-    });
+    void loadPanes();
     return () => {
-      offView();
-      offOut();
-      offClosing();
-      offExit();
-      if (flushHandleRef.current !== null) {
-        cancelAnimationFrame(flushHandleRef.current);
-        flushHandleRef.current = null;
-      }
       ledgerRefreshRef.current.cancel();
     };
   }, []);
 
-  function appendSystem(text: string) {
-    setMessages((prev) => [...prev, { id: createMessageId(), kind: "system", text }]);
-  }
-
-  // stderr のチャンクを末尾の stderr エントリに継ぎ足す（連続チャンクは1つに結合）。
-  function appendStderr(text: string) {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last !== undefined && last.kind === "stderr") {
-        return [...prev.slice(0, -1), { ...last, text: last.text + text }];
-      }
-      return [...prev, { id: createMessageId(), kind: "stderr", text }];
-    });
-  }
-
-  // 溜まったブロックを開いている枠へ流し込む。予約が残っていれば取り下げてから
-  // 走るので、フラッシュは「フレームが来た」「順序上いま流し切る必要がある」の
-  // どちらから呼んでも二重に走らない。
-  function flushPendingBlocks() {
-    if (flushHandleRef.current !== null) {
-      cancelAnimationFrame(flushHandleRef.current);
-      flushHandleRef.current = null;
-    }
-    const pending = pendingBlocksRef.current;
-    if (pending.length === 0) {
-      return;
-    }
-    pendingBlocksRef.current = [];
-    const openId = openTurnIdRef.current;
-    setMessages((prev) => appendBlocksTo(prev, openId, pending));
-  }
-
-  // 開いているターンへブロックを追記する。契約上ブロックは turn.started の後にしか
-  // 来ないが、万一開き枠が無ければ落とさず新しい枠を開く（n/provider は不明）。
-  // 反映は次のフレームまで遅らせる — 到着はストリームの速さで来るが、人が読める
-  // 速さは画面の更新頻度が上限で、その間の中間状態を描く意味は無い。
-  function appendBlock(block: TurnBlock) {
-    if (openTurnIdRef.current === null) {
-      // id だけ先に確定させる: 実体の枠は flush が appendBlocksTo で開くが、
-      // turn.finished がこの枠を見つけられるよう ref は今のうちに合わせる。
-      openTurnIdRef.current = createMessageId();
-    }
-    pendingBlocksRef.current.push(block);
-    if (flushHandleRef.current === null) {
-      flushHandleRef.current = requestAnimationFrame(() => {
-        flushHandleRef.current = null;
-        flushPendingBlocks();
-      });
-    }
-  }
-
-  // chat:view の NDJSON イベントを構造化メッセージへ落とす。未知の type は無視する
-  // （本体 ADR-0032 の契約: 消費者は未知の type を無視せよ）。ready/init/provider/
-  // task.started は消費してよい（表示しない）。
-  function handleViewEvent(raw: unknown) {
-    if (!isViewEvent(raw)) {
-      return;
-    }
-    const ev = raw;
-    // 待ちの段は全イベントを通す (ADR-0008): 下の switch が表示のために消費
-    // しない type（ready・decided）こそが段の合図なので、判定は手前に置く。
-    const nextActivity = advanceActivity(activityRef.current, ev, Date.now());
-    if (nextActivity !== activityRef.current) {
-      setActivity(nextActivity);
-    }
-    switch (ev.type) {
-      case "turn.started": {
-        // 溜まりを先に流し切ってから開き枠を差し替える: 後回しにすると、前の
-        // ターンのブロックが新しい枠の id で流れ込み、発言が1つ後ろのターンへ
-        // ずれる。
-        flushPendingBlocks();
-        const id = createMessageId();
-        openTurnIdRef.current = id;
-        const n = asNumber(ev.n) ?? 0;
-        const provider = asString(ev.provider) ?? "";
-        const decided = activeDecidedRef.current ?? undefined;
-        setMessages((prev) => [...prev, { id, kind: "turn", n, provider, blocks: [], decided }]);
-        break;
-      }
-      case "task.started": {
-        // decided は自分より先に届いているはずなので、sidが一致する分だけ
-        // このタスクの監査行として採用する（本体 ADR-0040 Decision 1）。
-        const sid = asString(ev.sid);
-        activeDecidedRef.current =
-          sid !== undefined && pendingDecidedRef.current?.sid === sid ? pendingDecidedRef.current : null;
-        pendingDecidedRef.current = null;
-        break;
-      }
-      case "decided": {
-        const decided = asDecidedEvent(ev);
-        if (decided !== undefined) {
-          pendingDecidedRef.current = decided;
-        }
-        break;
-      }
-      case "text": {
-        const text = asString(ev.text);
-        if (text !== undefined && text !== "") {
-          appendBlock({ kind: "text", text });
-        }
-        break;
-      }
-      case "tool": {
-        const name = asString(ev.name);
-        if (name !== undefined) {
-          const detail = asString(ev.detail);
-          appendBlock(detail !== undefined ? { kind: "tool", name, detail } : { kind: "tool", name });
-        }
-        break;
-      }
-      case "tool_result": {
-        const text = asString(ev.text);
-        if (text !== undefined) {
-          // 受け取った時点で予算に収める（描画時ではなく）: 本体は上限なしで
-          // 流す契約なので、丸ごと持つと長いターンで積み上がるだけ積み上がる。
-          appendBlock({ kind: "tool_result", text: budgetToolResult(text) });
-        }
-        break;
-      }
-      case "error": {
-        const message = asString(ev.message);
-        if (message !== undefined && message !== "") {
-          appendBlock({ kind: "error", message });
-        }
-        break;
-      }
-      case "turn.finished": {
-        // 締める前に溜まりを流し切る: 残したまま枠を閉じると、最後のひと息の
-        // ブロックが行き先を失う。畳み込み(turnFold)も全ブロックが揃ってから走る。
-        flushPendingBlocks();
-        const id = openTurnIdRef.current;
-        openTurnIdRef.current = null;
-        const durationMs = asNumber(ev.duration_ms) ?? 0;
-        const costUsd = asNumber(ev.cost_usd);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === id && m.kind === "turn"
-              ? { ...m, finished: costUsd !== undefined ? { durationMs, costUsd } : { durationMs } }
-              : m,
-          ),
-        );
-        break;
-      }
-      case "note": {
-        const text = asString(ev.text);
-        if (text === undefined || text === "") {
-          break;
-        }
-        const awaiting = ev.await === true;
-        // await の note は境界の Feedback 質問 = 入力欄で答える対象なので、空送信
-        // （まだ言えない）を許す区切り状態に入れる。
-        if (awaiting) {
-          setBoundary(true);
-        }
-        // 窓を閉じる途中なら、同じ行がダイアログの問い（await）と経過の表示
-        // （それ以外）になる (ADR-0005 Decision 2)。ログにも同じものを積む —
-        // ダイアログは締めの間だけの器で、会話の記録はチャット面が持つ。
-        if (closingRef.current) {
-          if (awaiting) {
-            setClosingQuestion(parseBoundaryQuestion(text));
-          } else {
-            setClosingNotes((prev) => [...prev, text.trim()]);
-          }
-        }
-        setMessages((prev) => [...prev, { id: createMessageId(), kind: "note", text, await: awaiting }]);
-        break;
-      }
-      case "task.finished":
-      case "task.cancelled": {
-        // 記帳・知覚が走りステージも一覧も動きうる瞬間。手で /new を打った場合は
-        // これだけが台帳更新の合図になる（/exit 経由の refresh は chat:exit に残す）。
-        // 境界の器官が済んだので空送信の許可も閉じる — /exit を経ないセッション
-        // 境界（手打ちの /new）で「まだ言えない」ボタンが残留しないように。
-        setBoundary(false);
-        // 済んだタスクの decided を次のタスクへ持ち越さない（次に decided が
-        // 来ない旧本体・do 経由の場合に古い監査行が誤って表示されるのを防ぐ）。
-        activeDecidedRef.current = null;
-        ledgerRefreshRef.current.schedule();
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  async function sendLine(line: string) {
-    // 待ちは送る前に立てる: 子プロセスの起動（初回送信）はこの await の中で
-    // 起きるので、返ってから立てたのでは一番長い沈黙が空白のままになる。
-    beginActivity(sendingPhase());
+  async function loadPanes() {
     try {
-      await SendLine(line);
+      setPanes(await GetPanes());
     } catch (err) {
-      // 渡せていない以上、待つ相手は居ない。
-      setActivity(null);
-      appendSystem(`送信に失敗: ${errorMessage(err)}`);
+      // 窓が1つも読めないのは会話面が消えるのと同じなので、黙らない。
+      setGuiConfigError(`窓の構成を読めなかった: ${errorMessage(err)}`);
     }
   }
 
-  // 「New chat」= /exit (ADR-0001 追記: 反映境界 = セッション境界 = プロセス
-  // 境界)。走行中のプロセスが無ければ区切る対象も無いので、何も起動せず
-  // チャット面へ切り替えるだけ。ログは消さない: 区切りの尾部
-  // (Feedback → 知覚 → Tomo)がこの直後にストリームで届くので、消すと会話の
-  // 締めくくりごと見えなくなる。
-  async function handleNewChat() {
+  async function handleAddPane() {
+    try {
+      setPanes(await AddPane());
+      setActivePane("chat");
+    } catch (err) {
+      setGuiConfigError(errorMessage(err));
+    }
+  }
+
+  // 窓を閉じる = その窓のセッションを区切る (ADR-0009 Decision 4)。Go が /exit を
+  // 送って締めが走り始めたら、畳むのは chat:exit が届いてから。
+  async function handleClosePane(pane: string) {
     let started: boolean;
     try {
-      started = await EndTask();
+      started = await ClosePane(pane);
     } catch (err) {
-      appendSystem(`区切りに失敗: ${errorMessage(err)}`);
-      setActivePane("chat");
+      setGuiConfigError(errorMessage(err));
       return;
     }
     if (started) {
-      expectedExitRef.current = true;
-      setBoundary(true);
-      // 区切りの尾部（Feedback → 知覚 → 質問 → 鏡）はここから走る。宣言の1行の
-      // 後にまた沈黙が続くので、走っていることは帯が言い続ける (ADR-0008)。
-      beginActivity("closing");
-      // 区切り中も入力は生かす: 直後に届くTomoの締めの質問（Feedback）への答えは
-      // この入力欄から送る。代わりに「新しい話はまだ届かない」ことを言葉で伝える。
-      // この文に完了表示の「区切った」を含めない: 完了を文字列で探す目（人も
-      // スクリプトも）が宣言に誤発火する — E2E 実測で踏んだ罠。
-      appendSystem("ここまでを区切って次のタスクへ (/exit) — 締めの質問にはそのまま答えられる。新しい話は締めが終わってから");
-    }
-    setActivePane("chat");
-  }
-
-  function handleSend(draft: string) {
-    // 改行は潰さず保持する: 本体 cooked mode の末尾 `\` 継続でエンコードされ
-    // 1ターンに繋ぎ直される（ADR-0032 Decision 2）。エンコードは Go 側の SendLine。
-    const trimmed = draft.trim();
-    if (trimmed === "") {
-      if (boundaryRef.current) {
-        // 締めの質問への空回答（=まだ言えない）は吹き出しを作らないが、無痕跡だと
-        // 読み返しで「Tomoの自問自答」に見える — 軽い注記だけ残す。
-        appendSystem("（まだ言えない — 空のまま回答）");
-      }
-      void sendLine("");
+      closingPanesRef.current.add(pane);
       return;
     }
-    setMessages((prev) => [...prev, { id: createMessageId(), kind: "user", text: trimmed }]);
-    void sendLine(trimmed);
+    void loadPanes();
   }
 
-  // 作業バーの変更は即保存する（設定ペインのような保存ボタンは置かない —
-  // フォルダを選ぶ操作そのものが確定の意思表示）。保存と同時に走行中のチャットへ
-  // 宣言が飛ぶ (ADR-0004 改訂 Decision 3)。効き始めの言葉はここでは足さない:
-  // 受け取ったかどうかは本体が答え、その返事は view ストリームでこの同じログに
-  // 出る（タスクの途中なら「/new で区切ってから」と本体が言う）。
-  function handleWorkspaceChange(workingDir: string, readDirs: string[]) {
-    void SetWorkspace(workingDir, readDirs)
-      .then((update) => {
-        applyGUIConfig(update.config);
-        if (update.pending) {
-          // 走行中のタスクには届いていない。バーの見た目だけ変わって Tomo は
-          // 前の場所のまま、という食い違いを黙って作らない。
-          appendSystem("働く場所を保存した — 今のタスクには効かない。New chat で区切った後から");
-        }
-      })
-      .catch((err: unknown) => {
-        appendSystem(`働く場所の保存に失敗: ${errorMessage(err)}`);
-      });
+  // 走っていた窓の締めが終わった。ここで初めて画面から畳む。
+  function handlePaneExit(pane: string) {
+    if (!closingPanesRef.current.delete(pane)) {
+      return;
+    }
+    void loadPanes();
   }
 
-  // 締めダイアログのボタン1つ = 端末で打つ1行 (ADR-0005 Decision 2)。空文字は
-  // 本体の「無信号」経路（Enter=まだ言えない/スキップ）そのもの。答えた瞬間に
-  // 問いを畳んで、次の器官の質問が来るまで待ちの表示へ戻す。
-  function handleClosingAnswer(send: string) {
-    setClosingQuestion(null);
-    void sendLine(send);
-  }
-
-  // 「待たずに閉じる」: 猶予を捨てて即座に回収する（Go 側 AbandonBoundary）。
-  function handleAbandonBoundary() {
-    setClosingMode(false);
-    void AbandonBoundary();
+  // 働く場所の保存は窓ごと (ADR-0009 Decision 3)。返す文字列はその窓の会話面へ
+  // 出す一言で、null は「言うことは無い」。
+  async function handleWorkspaceChange(
+    pane: string,
+    workingDir: string,
+    readDirs: string[],
+  ): Promise<string | null> {
+    try {
+      const update = await SetWorkspace(pane, workingDir, readDirs);
+      applyGUIConfig(update.config);
+      setPanes(update.config.panes ?? []);
+      if (update.pending) {
+        return "働く場所を保存した — 今のタスクには効かない。New chat で区切った後から";
+      }
+      return null;
+    } catch (err) {
+      return `働く場所の保存に失敗: ${errorMessage(err)}`;
+    }
   }
 
   // サイドバーの畳み状態は gui.json の表示ノブ (ADR-0001 Decision 4 / ADR-0006)。
@@ -588,17 +234,10 @@ function App() {
     </>
   );
 
+  // 同じ場所で働く窓の観測 (ADR-0009 Decision 6)。判断はしない。
+  const shared = sharedPlaces(panes);
+
   return (
-    // 実行ボタン (ADR-0007) の配線。チャットと過去セッションは同じ MessageView →
-    // Markdown を通るので、両方を含む一番外側で1度だけ配る。設定がまだ読めて
-    // いない間 (guiConfig === null) は無効 — 読めていないことを ON 側へ倒さない。
-    <RunCommandProvider
-      value={{
-        enabled: guiConfig?.run_command === true,
-        workingDir: guiConfig?.working_dir ?? "",
-        run: RunCommand,
-      }}
-    >
     <div id="app">
       <Sidebar
         activePane={activePane}
@@ -612,7 +251,7 @@ function App() {
         usageCollapsed={guiConfig?.sidebar_usage_collapsed ?? false}
         onToggleTomo={(collapsed) => saveSidebarFold({ sidebar_tomo_collapsed: collapsed })}
         onToggleUsage={(collapsed) => saveSidebarFold({ sidebar_usage_collapsed: collapsed })}
-        onNewChat={handleNewChat}
+        onNewChat={() => void handleAddPane()}
         onSelectPane={setActivePane}
         onSelectSession={handleSelectSession}
       />
@@ -636,22 +275,27 @@ function App() {
         {/* チャットと設定はアンマウントせず隠すだけ: 入力途中の下書き・未保存の
             喋り方編集がペイン切替で消えるのを防ぐ（実機レビューで確認された
             データロス）。メモリと過去セッションは意図的に毎回マウントし直す —
-            開くたびに台帳の最新を読み直す方が、黙って古いViewを見せるより正しい */}
-        <div style={{ display: activePane === "chat" ? "contents" : "none" }}>
-          <ChatPane
-            messages={messages}
-            activity={activity}
-            onSend={handleSend}
-            allowEmptySend={boundaryActive}
-            workspace={
-              <WorkspaceBar
-                workingDir={guiConfig === null ? null : (guiConfig.working_dir ?? "")}
-                readDirs={guiConfig?.read_dirs ?? []}
-                onChange={handleWorkspaceChange}
-                onError={appendSystem}
-              />
-            }
-          />
+            開くたびに台帳の最新を読み直す方が、黙って古いViewを見せるより正しい。
+
+            窓は格子に並ぶ (ADR-0009 Decision 2)。display:contents は grid セルに
+            できないので、チャット面だけは実体の div で包む */}
+        <div
+          className={activePane === "chat" ? paneGridClass(panes.length) : undefined}
+          style={activePane === "chat" ? undefined : { display: "none" }}
+        >
+          {panes.map((pane) => (
+            <ChatPaneHost
+              key={pane.id}
+              pane={pane}
+              closable={panes.length > 1}
+              sharesPlace={shared.has(pane.id)}
+              runCommandEnabled={guiConfig?.run_command === true}
+              onLedgerChange={() => ledgerRefreshRef.current.schedule()}
+              onWorkspaceChange={handleWorkspaceChange}
+              onClose={(id) => void handleClosePane(id)}
+              onExited={handlePaneExit}
+            />
+          ))}
         </div>
         <div style={{ display: activePane === "settings" ? "contents" : "none" }}>
           <SettingsPane
@@ -666,16 +310,7 @@ function App() {
           <SessionPane sessionId={selectedSession} />
         )}
       </main>
-      {closing && (
-        <ClosingDialog
-          question={closingQuestion}
-          notes={closingNotes}
-          onAnswer={handleClosingAnswer}
-          onAbandon={handleAbandonBoundary}
-        />
-      )}
     </div>
-    </RunCommandProvider>
   );
 }
 

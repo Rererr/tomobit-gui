@@ -109,7 +109,7 @@ func seedOneRealSession(t *testing.T) *App {
 		switch name {
 		case eventChatView:
 			mu.Lock()
-			events = append(events, data[0].(map[string]any))
+			events = append(events, data[0].(ViewEvent).Event)
 			mu.Unlock()
 		case eventChatExit:
 			exited <- data[0].(ExitInfo)
@@ -134,19 +134,19 @@ func seedOneRealSession(t *testing.T) *App {
 		t.Fatalf("%s が %s 待っても届かない。events:\n%v", what, timeout, events)
 	}
 
-	if err := app.SendLine("1たす1の答えを半角数字ひとつだけで答えて"); err != nil {
+	if err := app.SendLine(mainPane, "1たす1の答えを半角数字ひとつだけで答えて"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(`text イベントの "2"`, func(ev map[string]any) bool {
 		return ev["type"] == "text" && strings.Contains(toString(ev["text"]), "2")
 	}, 180*time.Second)
-	if err := app.SendLine("/exit"); err != nil {
+	if err := app.SendLine(mainPane, "/exit"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(`note "どうだった"`, func(ev map[string]any) bool {
 		return ev["type"] == "note" && strings.Contains(toString(ev["text"]), "どうだった")
 	}, 30*time.Second)
-	if err := app.SendLine(""); err != nil { // Feedback は無信号で答える
+	if err := app.SendLine(mainPane, ""); err != nil { // Feedback は無信号で答える
 		t.Fatal(err)
 	}
 	select {

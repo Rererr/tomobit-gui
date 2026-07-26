@@ -36,7 +36,7 @@ func TestBeforeClose_走行中のchatには区切りを送って閉窓を差し�
 		mu.Unlock()
 	}
 	proc, r := pipedProc(t)
-	app.proc = proc
+	app.procs[mainPane] = proc
 
 	if !app.beforeClose(context.Background()) {
 		t.Fatal("beforeClose = false — 区切りを走らせる前に閉じてしまう")
@@ -72,7 +72,7 @@ func TestBeforeClose_二度目は差し止めない(t *testing.T) {
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	proc, r := pipedProc(t)
-	app.proc = proc
+	app.procs[mainPane] = proc
 
 	if !app.beforeClose(context.Background()) {
 		t.Fatal("一度目で差し止めていない")
@@ -95,7 +95,7 @@ func TestBeforeClose_送信に失敗したら差し止めない(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Close() // 読み手が居ない = write は EPIPE
-	app.proc = &chatProc{stdin: w, done: make(chan struct{})}
+	app.procs[mainPane] = &chatProc{stdin: w, done: make(chan struct{})}
 
 	if app.beforeClose(context.Background()) {
 		t.Error("beforeClose = true — /exit すら送れないのに窓が閉じない")
@@ -114,7 +114,7 @@ func TestBeforeClose_送信に失敗したら差し止めない(t *testing.T) {
 func TestBeforeClose_子が読んでいなくてもUIスレッドを止めない(t *testing.T) {
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
-	app.proc = blockedProc(t)
+	app.procs[mainPane] = blockedProc(t)
 
 	var stop bool
 	waitOrFail(t, 2*time.Second,
@@ -139,7 +139,7 @@ func TestShutdown_待たずに閉じるなら猶予を待たない(t *testing.T)
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	proc := blockedProc(t)
-	app.proc = proc
+	app.procs[mainPane] = proc
 	app.abandonBoundary = true
 
 	// Kill する実プロセスは無いので、回収済みを装って done を閉じておく

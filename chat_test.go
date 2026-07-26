@@ -214,7 +214,7 @@ func TestPumpStream_ルーン分断は結合され全文が欠けず届く(t *te
 	}
 	// 「答」(3 bytes) を2バイト目で割るチャンク境界。
 	r := &chunkReader{chunks: [][]byte{raw[:5], raw[5:]}}
-	app.pumpStream(r, "stdout")
+	app.pumpStream(mainPane, r, "stdout")
 
 	joined := strings.Join(got, "")
 	if joined != string(raw) {
@@ -273,9 +273,9 @@ func TestPumpViewStream_stdoutをNDJSONイベント列にフレーミングす�
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				got = append(got, data[0].(map[string]any))
+				got = append(got, data[0].(ViewEvent).Event)
 			}
-			app.pumpViewStream(&chunkReader{chunks: append([][]byte(nil), c.chunks...)}, nil)
+			app.pumpViewStream(mainPane, &chunkReader{chunks: append([][]byte(nil), c.chunks...)}, nil)
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("events = %#v, want %#v", got, c.want)
 			}
@@ -395,8 +395,9 @@ func hasFlagValue(args []string, flag, value string) bool {
 func TestNewChatCmd_働く場所が起動argvに乗る(t *testing.T) {
 	t.Setenv("TOMOBIT_CLAUDE_ARGS_APPEND", "")
 	dir := t.TempDir()
-	a := &App{guiConfig: GUIConfig{WorkingDir: dir, Provider: "claude-code"}}
-	cmd := a.newChatCmd("/usr/local/bin/tomobit", []string{"/a"})
+	a := &App{guiConfig: GUIConfig{Provider: "claude-code"}}
+	// 働く場所は窓ごとになったので、起動する側が渡す (ADR-0009 Decision 3)。
+	cmd := a.newChatCmd("/usr/local/bin/tomobit", dir, []string{"/a"})
 	if !hasFlagValue(cmd.Args, "--cd", dir) {
 		t.Errorf("--cd が argv に無い: %v", cmd.Args)
 	}
@@ -404,7 +405,7 @@ func TestNewChatCmd_働く場所が起動argvに乗る(t *testing.T) {
 		t.Errorf("--add-dir が argv に無い: %v", cmd.Args)
 	}
 	// 未設定の作業ディレクトリは継承（cmd.Dir 空）— 設定を入れるまで挙動は変わらない。
-	if cmd := (&App{}).newChatCmd("/usr/local/bin/tomobit", nil); hasFlag(cmd.Args, "--cd") {
+	if cmd := (&App{}).newChatCmd("/usr/local/bin/tomobit", "", nil); hasFlag(cmd.Args, "--cd") {
 		t.Errorf("未設定なのに --cd を積んだ（GUI の起動ディレクトリを継承すべき）: %v", cmd.Args)
 	}
 }

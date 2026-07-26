@@ -45,7 +45,7 @@ func TestE2E_顔窓がGUI設定ONのchat起動で開き対話の終わりで閉�
 	// 境界だけ踏む。締めの Feedback 質問が来ても後段の shutdown（stdin EOF = 無信号）
 	// が答えになる — SendLine("") で答えないのは、プロセスが先に終わっていた場合に
 	// ensureProcLocked が新しい chat と顔窓をもう一組立ててしまうから。
-	if err := app.SendLine("/exit"); err != nil {
+	if err := app.SendLine(mainPane, "/exit"); err != nil {
 		t.Fatal(err)
 	}
 	waitCond(t, "顔窓プロセスの出現", 20*time.Second, faceRunning)
@@ -87,7 +87,7 @@ func TestE2E_顔窓がGUI設定OFFではchat起動で開かない(t *testing.T) 
 
 	// /exit だけ送ってターンは走らせない（顔窓は chat 起動時に開く／開かないが
 	// 決まる）。
-	if err := app.SendLine("/exit"); err != nil {
+	if err := app.SendLine(mainPane, "/exit"); err != nil {
 		t.Fatal(err)
 	}
 	// 顔窓が開くとすれば TestE2E_顔窓がGUIのchat起動で開き対話の終わりで閉じる

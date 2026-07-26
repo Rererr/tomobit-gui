@@ -18,8 +18,15 @@ type App struct {
 	// Wails app.
 	emit func(name string, data ...interface{})
 
-	mu        sync.Mutex
-	proc      *chatProc
+	mu sync.Mutex
+	// procs holds one running `tomobit chat` per pane (ADR-0009 Decision 2:
+	// 1窓 = 1プロセス = 1セッション). Phase 1 runs exactly one — mainPane — so
+	// behaviour is unchanged; the key exists so later phases add panes without
+	// having to revisit every call site again.
+	//
+	// Entries are created lazily by ensureProcLocked and removed when the child
+	// exits, so a missing key and a nil value both mean "nothing running here".
+	procs     map[string]*chatProc
 	stopping  bool
 	guiConfig GUIConfig
 	// closingBoundary は「窓の×で区切りを走らせている最中」(ADR-0005)。
@@ -32,8 +39,33 @@ type App struct {
 	abandonBoundary bool
 }
 
+// mainPane is the only pane Phase 1 opens. Named rather than "" so a pane id
+// is always a real value in the ledger of events and in the frontend, and the
+// day a second pane appears nothing has to be migrated.
+const mainPane = "main"
+
 func NewApp() *App {
-	return &App{}
+	return &App{procs: map[string]*chatProc{}}
+}
+
+// procFor reads one pane's process. Caller holds a.mu.
+func (a *App) procForLocked(pane string) *chatProc {
+	if a.procs == nil {
+		return nil
+	}
+	return a.procs[pane]
+}
+
+// livePanesLocked lists the panes with a running process, in no particular
+// order. Caller holds a.mu.
+func (a *App) livePanesLocked() []string {
+	panes := make([]string, 0, len(a.procs))
+	for pane, p := range a.procs {
+		if p != nil {
+			panes = append(panes, pane)
+		}
+	}
+	return panes
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -94,19 +126,33 @@ type WorkspaceUpdate struct {
 // と断るだけで、宣言の行数ぶん断り文句が会話面に並ぶ（実機で確認）。境界の
 // 規律は本体のもののままで、GUI は「開いているか」という観測事実だけを見て
 // 黙り、代わりに Pending を返して画面に一言言わせる。
-func (a *App) SetWorkspace(workingDir string, readDirs []string) (WorkspaceUpdate, error) {
+func (a *App) SetWorkspace(pane, workingDir string, readDirs []string) (WorkspaceUpdate, error) {
 	c, err := loadGUIConfig()
 	if err != nil {
 		return WorkspaceUpdate{}, fmt.Errorf("設定の読み込みに失敗: %w", err)
 	}
-	c.WorkingDir = workingDir
-	c.ReadDirs = readDirs
+	// 窓ごとの働く場所 (ADR-0009 Decision 3)。書き込む前に PaneList を通すのは、
+	// 旧構成（panes キー無し）で保存が来たときに、その1窓ぶんを先に実体化して
+	// おくため — さもないと最初の保存が既存の working_dir を消す。
+	panes := append([]PaneConfig(nil), c.PaneList()...)
+	found := false
+	for i := range panes {
+		if panes[i].ID == pane {
+			panes[i].WorkingDir = workingDir
+			panes[i].ReadDirs = readDirs
+			found = true
+		}
+	}
+	if !found {
+		panes = append(panes, PaneConfig{ID: pane, WorkingDir: workingDir, ReadDirs: readDirs})
+	}
+	c.Panes = panes
 	if err := saveGUIConfig(c); err != nil {
 		return WorkspaceUpdate{}, fmt.Errorf("設定の保存に失敗: %w", err)
 	}
 	a.mu.Lock()
 	a.guiConfig = c
-	p := a.proc
+	p := a.procForLocked(pane)
 	a.mu.Unlock()
 	if p == nil {
 		// 走っていなければ宣言する相手がいない。次の起動が argv で持っていく。
@@ -115,10 +161,102 @@ func (a *App) SetWorkspace(workingDir string, readDirs []string) (WorkspaceUpdat
 	if p.isTaskOpen() {
 		return WorkspaceUpdate{Config: c, Pending: true}, nil
 	}
-	if err := p.write(workspaceDeclaration(c.WorkingDir, c.NormalizedReadDirs())); err != nil {
+	pc := c.PaneFor(pane)
+	if err := p.write(workspaceDeclaration(pc.WorkingDir, pc.NormalizedReadDirs())); err != nil {
 		return WorkspaceUpdate{Config: c, Pending: true}, fmt.Errorf("保存はできたが、走行中のチャットへ伝えられなかった: %w", err)
 	}
 	return WorkspaceUpdate{Config: c}, nil
+}
+
+// AddPane opens one more window (ADR-0009 Decision 2), up to MaxPanes, and
+// returns the new layout. プロセスは起動しない — 空の窓が Provider の枠も
+// quota も握らないのは遅延起動の副産物で、窓が増えてもそこは変わらない。
+func (a *App) AddPane() ([]PaneConfig, error) {
+	c, err := loadGUIConfig()
+	if err != nil {
+		return nil, fmt.Errorf("設定の読み込みに失敗: %w", err)
+	}
+	panes := append([]PaneConfig(nil), c.PaneList()...)
+	if len(panes) >= MaxPanes {
+		return panes, fmt.Errorf("窓は%d個まで", MaxPanes)
+	}
+	// 新しい窓は「まだどこでも働いていない」状態で生まれる: 直前の窓の場所を
+	// 継がせると、同じ場所で2つ動く構成が既定になってしまう (Decision 6 が
+	// 事実として言う羽目になる状態を、既定で作りに行かない)。
+	panes = append(panes, PaneConfig{ID: newPaneID(panes)})
+	c.Panes = panes
+	if err := saveGUIConfig(c); err != nil {
+		return nil, fmt.Errorf("設定の保存に失敗: %w", err)
+	}
+	a.mu.Lock()
+	a.guiConfig = c
+	a.mu.Unlock()
+	return panes, nil
+}
+
+// ClosePane removes a window. 窓を閉じる = その窓のセッションを区切る
+// (ADR-0009 Decision 4) なので、生きているプロセスへは EndTask と同じ /exit を
+// 送る。true は「締めが走り始めた」— 画面はその窓の中にダイアログを出し、
+// chat:exit が届いてから実際に窓を畳む。
+//
+// 最後の1窓は閉じない: 会話面が0個の GUI は、ただ壊れて見える。
+func (a *App) ClosePane(pane string) (bool, error) {
+	c, err := loadGUIConfig()
+	if err != nil {
+		return false, fmt.Errorf("設定の読み込みに失敗: %w", err)
+	}
+	panes := c.PaneList()
+	if len(panes) <= 1 {
+		return false, fmt.Errorf("最後の窓は閉じられない")
+	}
+	kept := make([]PaneConfig, 0, len(panes)-1)
+	for _, p := range panes {
+		if p.ID != pane {
+			kept = append(kept, p)
+		}
+	}
+	c.Panes = kept
+	if err := saveGUIConfig(c); err != nil {
+		return false, fmt.Errorf("設定の保存に失敗: %w", err)
+	}
+	a.mu.Lock()
+	a.guiConfig = c
+	p := a.procForLocked(pane)
+	a.mu.Unlock()
+	if p == nil {
+		return false, nil
+	}
+	if err := p.write("/exit\n"); err != nil {
+		return false, fmt.Errorf("chat への /exit 送信に失敗: %w", err)
+	}
+	return true, nil
+}
+
+// GetPanes returns the saved window layout, migrating a pre-ADR-0009 config to
+// one pane on the way out (PaneList) without writing anything.
+func (a *App) GetPanes() ([]PaneConfig, error) {
+	c, err := loadGUIConfig()
+	if err != nil {
+		return nil, err
+	}
+	return c.PaneList(), nil
+}
+
+// newPaneID picks an id no current pane holds. Ids are opaque to everything
+// except the map key and the frontend's React key, so a counter is enough —
+// but it must not collide with a pane that is still open, or two windows would
+// share one chat process.
+func newPaneID(panes []PaneConfig) string {
+	taken := make(map[string]bool, len(panes))
+	for _, p := range panes {
+		taken[p.ID] = true
+	}
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("pane-%d", i)
+		if !taken[id] {
+			return id
+		}
+	}
 }
 
 // ChooseDirectory opens the OS folder picker and returns the chosen absolute
@@ -151,13 +289,13 @@ func (a *App) emitEvent(name string, data ...interface{}) {
 // is answered with a bare Enter, and outside it the chat skips empty lines, so
 // an accidental one costs nothing. エンコード結果は複数行になりうるが1回の Write
 // で書く（既存の EPIPE 再起動リトライがそのまま効く）。
-func (a *App) SendLine(text string) error {
+func (a *App) SendLine(pane, text string) error {
 	line := encodeTurn(text)
-	p, err := a.sendProc()
+	p, err := a.sendProc(pane)
 	if err != nil {
 		return err
 	}
-	return a.writeLine(p, line)
+	return a.writeLine(pane, p, line)
 }
 
 // writeLine writes line to p, restarting the chat process once and
@@ -167,13 +305,13 @@ func (a *App) SendLine(text string) error {
 // not reading stdin: a full pipe buffer blocks the write, and a.mu must stay
 // free during that block so shutdown (and any other SendLine/EndTask call)
 // never queues behind it.
-func (a *App) writeLine(p *chatProc, line string) error {
+func (a *App) writeLine(pane string, p *chatProc, line string) error {
 	err := p.write(line)
 	if err == nil {
 		return nil
 	}
-	a.invalidateProc(p)
-	p2, err2 := a.sendProc()
+	a.invalidateProc(pane, p)
+	p2, err2 := a.sendProc(pane)
 	if err2 != nil {
 		return fmt.Errorf("chat の再起動に失敗: %w (書き込み失敗: %v)", err2, err)
 	}
@@ -188,26 +326,26 @@ func (a *App) writeLine(p *chatProc, line string) error {
 // sets a.stopping together in one lock hold, so any sendProc call that
 // observes stopping is guaranteed to run after that hold — spawning past it
 // would create a process shutdown has already stopped waiting for.
-func (a *App) sendProc() (*chatProc, error) {
+func (a *App) sendProc(pane string) (*chatProc, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.stopping {
 		return nil, fmt.Errorf("chat はシャットダウン中のため送信できません")
 	}
-	if err := a.ensureProcLocked(); err != nil {
+	if err := a.ensureProcLocked(pane); err != nil {
 		return nil, err
 	}
-	return a.proc, nil
+	return a.procForLocked(pane), nil
 }
 
 // invalidateProc drops a.proc if it still equals stale — the process a write
 // just failed against — so the next sendProc spawns a replacement. The
 // equality check keeps a slow caller (its write held no lock) from
 // clobbering a process another goroutine already restarted in the meantime.
-func (a *App) invalidateProc(stale *chatProc) {
+func (a *App) invalidateProc(pane string, stale *chatProc) {
 	a.mu.Lock()
-	if a.proc == stale {
-		a.proc = nil
+	if a.procs[pane] == stale {
+		delete(a.procs, pane)
 	}
 	a.mu.Unlock()
 }
@@ -220,9 +358,9 @@ func (a *App) invalidateProc(stale *chatProc) {
 // 新しいセッションを立てて即座に区切るのは、この呼び出しの意味に反する。
 // a.stopping 下では a.proc は shutdown により同じロック下で既に nil にされて
 // いるため、ここで改めて確認する必要はない。
-func (a *App) EndTask() (bool, error) {
+func (a *App) EndTask(pane string) (bool, error) {
 	a.mu.Lock()
-	p := a.proc
+	p := a.procForLocked(pane)
 	a.mu.Unlock()
 	if p == nil {
 		return false, nil
@@ -250,12 +388,17 @@ const eventBoundaryClosing = "app:closing"
 // shutdown の猶予つき回収へ落ちる）。
 func (a *App) beforeClose(_ context.Context) bool {
 	a.mu.Lock()
-	p, already := a.proc, a.closingBoundary
-	if p != nil && !already {
+	already := a.closingBoundary
+	panes := a.livePanesLocked()
+	procs := make([]*chatProc, 0, len(panes))
+	for _, pane := range panes {
+		procs = append(procs, a.procs[pane])
+	}
+	if len(procs) > 0 && !already {
 		a.closingBoundary = true
 	}
 	a.mu.Unlock()
-	if p == nil || already {
+	if len(procs) == 0 || already {
 		return false
 	}
 	// 送れないなら差し止める理由も無い: 区切りは走らないので、そのまま閉じて
@@ -267,11 +410,22 @@ func (a *App) beforeClose(_ context.Context) bool {
 	// 素の write は止まりうる。凍った窓から逃げるための器官(ADR-0005)が、
 	// その凍った瞬間にだけ窓を道連れにするのでは筋が通らない。期限切れは
 	// 「区切りを走らせられなかった」であって失敗ではないので、差し止めずに閉じる。
-	if err := p.writeWithin("/exit\n", beforeCloseWriteGrace); err != nil {
+	//
+	// 窓が複数あるなら、締めは窓の数だけ立つ (ADR-0009 Decision 4): 全部へ /exit を
+	// 送り、1つでも走り出したなら閉窓を差し止める。1つも送れなかった時だけ、
+	// 差し止める理由が無いのでそのまま閉じる。
+	sent := 0
+	for i, p := range procs {
+		if err := p.writeWithin("/exit\n", beforeCloseWriteGrace); err != nil {
+			fmt.Fprintf(os.Stderr, "tomobit-gui: 閉窓時の /exit 送信に失敗 (%s): %v\n", panes[i], err)
+			continue
+		}
+		sent++
+	}
+	if sent == 0 {
 		a.mu.Lock()
 		a.closingBoundary = false
 		a.mu.Unlock()
-		fmt.Fprintln(os.Stderr, "tomobit-gui: 閉窓時の /exit 送信に失敗:", err)
 		return false
 	}
 	a.emitEvent(eventBoundaryClosing)
@@ -311,23 +465,37 @@ func (a *App) AbandonBoundary() {
 func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	a.stopping = true
-	p := a.proc
-	a.proc = nil
+	procs := make([]*chatProc, 0, len(a.procs))
+	for _, p := range a.procs {
+		if p != nil {
+			procs = append(procs, p)
+		}
+	}
+	a.procs = map[string]*chatProc{}
 	abandon := a.abandonBoundary
 	a.mu.Unlock()
-	if p == nil {
+	if len(procs) == 0 {
 		return
 	}
-	p.stdin.Close()
+	// 猶予は窓ごとに数え直さない: 人が待つのは1回で、窓が4つあるからといって
+	// 4倍待たされる理由は無い。stdin は全部先に閉じ、期限は全体で1つ持つ。
+	for _, p := range procs {
+		p.stdin.Close()
+	}
 	if abandon {
-		p.cmd.Process.Kill()
-		<-p.done
+		for _, p := range procs {
+			p.cmd.Process.Kill()
+			<-p.done
+		}
 		return
 	}
-	select {
-	case <-p.done:
-	case <-time.After(chatShutdownGrace):
-		p.cmd.Process.Kill()
-		<-p.done
+	deadline := time.After(chatShutdownGrace)
+	for _, p := range procs {
+		select {
+		case <-p.done:
+		case <-deadline:
+			p.cmd.Process.Kill()
+			<-p.done
+		}
 	}
 }

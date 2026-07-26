@@ -54,9 +54,9 @@ func TestShutdown_SendLineが送信ブロック中でも進む(t *testing.T) {
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	proc := blockedProc(t)
-	app.proc = proc
+	app.procs[mainPane] = proc
 
-	go app.SendLine("進まないはずの一言")
+	go app.SendLine(mainPane, "進まないはずの一言")
 	time.Sleep(100 * time.Millisecond) // let SendLine reach the blocking write
 
 	close(proc.done) // shutdown's grace wait shouldn't matter to this test
@@ -69,9 +69,9 @@ func TestShutdown_EndTaskが送信ブロック中でも進む(t *testing.T) {
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	proc := blockedProc(t)
-	app.proc = proc
+	app.procs[mainPane] = proc
 
-	go app.EndTask()
+	go app.EndTask(mainPane)
 	time.Sleep(100 * time.Millisecond) // let EndTask reach the blocking write
 
 	close(proc.done)
@@ -88,7 +88,7 @@ func TestSendLine_作業ディレクトリが消えていれば起動せず名�
 	gone := filepath.Join(t.TempDir(), "gone")
 	app.guiConfig = GUIConfig{WorkingDir: gone}
 
-	err := app.SendLine("こんにちは")
+	err := app.SendLine(mainPane, "こんにちは")
 	if err == nil {
 		t.Fatal("消えた作業ディレクトリのまま chat を起動した")
 	}
@@ -96,7 +96,7 @@ func TestSendLine_作業ディレクトリが消えていれば起動せず名�
 		t.Errorf("どの設定が悪いか名指さない: %v", err)
 	}
 	app.mu.Lock()
-	proc := app.proc
+	proc := app.procs[mainPane]
 	app.mu.Unlock()
 	if proc != nil {
 		t.Error("起動を止めるべき場面でプロセスが立った")
@@ -110,7 +110,7 @@ func TestSendLine_シャットダウン中は新しいプロセスを起動し�
 	app.stopping = true
 	app.mu.Unlock()
 
-	err := app.SendLine("こんにちは")
+	err := app.SendLine(mainPane, "こんにちは")
 	if err == nil || !strings.Contains(err.Error(), "シャットダウン中") {
 		t.Fatalf("stopping 中の SendLine が想定したエラーを返さない（新規プロセスを起動した可能性）: %v", err)
 	}
@@ -137,18 +137,18 @@ func TestSetWorkspace_他の設定を保ったまま保存し走行中のチャ�
 	defer r.Close()
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
-	app.proc = &chatProc{stdin: w, done: make(chan struct{})}
+	app.procs[mainPane] = &chatProc{stdin: w, done: make(chan struct{})}
 
 	work, extra := t.TempDir(), t.TempDir()
-	got, err := app.SetWorkspace(work, []string{extra, extra})
+	got, err := app.SetWorkspace(mainPane, work, []string{extra, extra})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Config.SpeakingStyle != "関西弁で" || got.Config.Provider != "codex" {
 		t.Errorf("他の設定が巻き戻った: %+v", got.Config)
 	}
-	if got.Config.WorkingDir != work {
-		t.Errorf("working_dir = %q, want %q", got.Config.WorkingDir, work)
+	if dir := got.Config.PaneFor(mainPane).WorkingDir; dir != work {
+		t.Errorf("panes[main].working_dir = %q, want %q", dir, work)
 	}
 	if got.Pending {
 		t.Error("タスクが開いていないのに保留にした")
@@ -158,7 +158,7 @@ func TestSetWorkspace_他の設定を保ったまま保存し走行中のチャ�
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.WorkingDir != work || saved.SpeakingStyle != "関西弁で" {
+	if saved.PaneFor(mainPane).WorkingDir != work || saved.SpeakingStyle != "関西弁で" {
 		t.Errorf("保存された gui.json が食い違う: %+v", saved)
 	}
 
@@ -180,15 +180,17 @@ func TestSetWorkspace_走行中のチャットが無ければ保存だけする(
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	work := t.TempDir()
-	if _, err := app.SetWorkspace(work, nil); err != nil {
+	if _, err := app.SetWorkspace(mainPane, work, nil); err != nil {
 		t.Fatalf("プロセス不在で失敗した: %v", err)
 	}
 	saved, err := loadGUIConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.WorkingDir != work {
-		t.Errorf("working_dir = %q, want %q", saved.WorkingDir, work)
+	// 働く場所は窓ごとの置き場へ移った (ADR-0009 Decision 3)。旧構成の
+	// gui.json は PaneList が1窓へ写すので、最初の保存でここが正になる。
+	if got := saved.PaneFor(mainPane).WorkingDir; got != work {
+		t.Errorf("panes[main].working_dir = %q, want %q (saved: %+v)", got, work, saved)
 	}
 }
 
@@ -206,22 +208,22 @@ func TestSetWorkspace_タスクの途中では宣言を送らず保留を返す(
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}
 	proc := &chatProc{stdin: w, done: make(chan struct{})}
-	app.proc = proc
+	app.procs[mainPane] = proc
 	// view ストリームの task.started が「開いた」の観測（本体 ADR-0032 の契約）。
-	app.emitViewLine([]byte(`{"type":"task.started","sid":"s-1"}`))
+	app.emitViewLine(mainPane, []byte(`{"type":"task.started","sid":"s-1"}`))
 	if !proc.isTaskOpen() {
 		t.Fatal("task.started を見てもタスクが開いたことになっていない")
 	}
 
 	work := t.TempDir()
-	got, err := app.SetWorkspace(work, nil)
+	got, err := app.SetWorkspace(mainPane, work, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !got.Pending {
 		t.Error("タスクの途中なのに保留を返さない")
 	}
-	if got.Config.WorkingDir != work {
+	if dir := got.Config.PaneFor(mainPane).WorkingDir; dir != work {
 		t.Errorf("保留でも保存はする: %+v", got.Config)
 	}
 	// パイプには1バイトも書かれていない。
@@ -241,11 +243,11 @@ func TestSetWorkspace_タスクの途中では宣言を送らず保留を返す(
 	}
 
 	// 区切れば（task.finished）また届くようになる。
-	app.emitViewLine([]byte(`{"type":"task.finished","sid":"s-1"}`))
+	app.emitViewLine(mainPane, []byte(`{"type":"task.finished","sid":"s-1"}`))
 	if proc.isTaskOpen() {
 		t.Fatal("task.finished を見てもタスクが開いたままになっている")
 	}
-	if got, err := app.SetWorkspace(work, nil); err != nil || got.Pending {
+	if got, err := app.SetWorkspace(mainPane, work, nil); err != nil || got.Pending {
 		t.Errorf("区切った後は宣言を送るべき: %+v %v", got, err)
 	}
 	if n := <-done; n == 0 {

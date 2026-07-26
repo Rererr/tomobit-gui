@@ -30,13 +30,29 @@ const (
 
 // OutChunk is one piece of the chat stream, in arrival order.
 type OutChunk struct {
+	// Pane says which window this chunk belongs to (ADR-0009). Every event the
+	// frontend receives carries it, because with more than one pane an event
+	// with no addressee can only be guessed at — and a guess would paint one
+	// conversation's output into another's log.
+	Pane    string `json:"pane"`
 	Channel string `json:"channel"` // "stdout" | "stderr"
 	Text    string `json:"text"`
 }
 
 // ExitInfo reports the chat process ending. Error is "" on a clean exit.
 type ExitInfo struct {
+	Pane  string `json:"pane"`
 	Error string `json:"error"`
+}
+
+// ViewEvent is one body-authored view event (本体 ADR-0032) addressed to a
+// pane. The body's object is carried whole under Event rather than merged with
+// a pane key: the contract says consumers ignore unknown fields, not that the
+// harness may add its own — and a body that one day emits "pane" itself must
+// not silently collide with ours.
+type ViewEvent struct {
+	Pane  string         `json:"pane"`
+	Event map[string]any `json:"event"`
 }
 
 // chatProc is one running `tomobit chat`. done closes after Wait returns, so
@@ -55,6 +71,22 @@ type chatProc struct {
 	// GUI はここで「開いているか」という観測事実だけを見る。
 	taskMu   sync.Mutex
 	taskOpen bool
+	// sid is the session this pane currently has open, "" between tasks. Only
+	// used to know which scrollback file is being written right now, so the
+	// total cap does not take a live pane's file as collateral (ADR-0009).
+	sid string
+}
+
+func (p *chatProc) setSID(sid string) {
+	p.taskMu.Lock()
+	p.sid = sid
+	p.taskMu.Unlock()
+}
+
+func (p *chatProc) currentSID() string {
+	p.taskMu.Lock()
+	defer p.taskMu.Unlock()
+	return p.sid
 }
 
 func (p *chatProc) setTaskOpen(v bool) {
@@ -336,8 +368,8 @@ func (a *App) chatEnv() []string {
 // Decision 4 / 顔窓 本体 ADR-0032 Decision 3）。GUI 自身は chdir しない: 働く
 // 場所は --cd で子プロセスにだけ渡り、顔窓や status/forget など他の子プロセスへ
 // 副作用を撒かない。Caller holds a.mu.
-func (a *App) newChatCmd(bin string, readDirs []string) *exec.Cmd {
-	cmd := exec.Command(bin, composeChatArgs(a.guiConfig.ChatProvider(), a.guiConfig.WorkingDir, readDirs)...)
+func (a *App) newChatCmd(bin, workingDir string, readDirs []string) *exec.Cmd {
+	cmd := exec.Command(bin, composeChatArgs(a.guiConfig.ChatProvider(), workingDir, readDirs)...)
 	cmd.Env = a.chatEnv()
 	return cmd
 }
@@ -349,14 +381,16 @@ func (a *App) newChatCmd(bin string, readDirs []string) *exec.Cmd {
 // 機械可読になる（本体 ADR-0032 Decision 1）。顔窓のオプトイン（TOMOBIT_FACE=1）は
 // 同 Decision 3 で pipe 起動でも効くようになった — env 合成は composeChatEnv に
 // 切り出す。
-func (a *App) ensureProcLocked() error {
-	if a.proc != nil {
+func (a *App) ensureProcLocked(pane string) error {
+	if a.procForLocked(pane) != nil {
 		return nil
 	}
 	// 設定の誤りはバイナリ探索より先に判じる: 作業ディレクトリの不在は起動を
 	// 止める (ADR-0004 Decision 1) — 立つ場所が無いまま起動して exec の生の
 	// chdir エラーを見せない。
-	if err := checkWorkingDir(a.guiConfig.WorkingDir, os.Stat); err != nil {
+	// 働く場所は窓ごと (ADR-0009 Decision 3)。旧構成は PaneFor が1窓へ写す。
+	pc := a.guiConfig.PaneFor(pane)
+	if err := checkWorkingDir(pc.WorkingDir, os.Stat); err != nil {
 		return err
 	}
 	bin, err := findTomobit(exec.LookPath, os.UserHomeDir)
@@ -364,8 +398,8 @@ func (a *App) ensureProcLocked() error {
 		return err
 	}
 	// 読み取り先の不在は劣化に留める (同 Decision 5): 落として、後で言う。
-	readDirs, missingDirs := splitExistingDirs(a.guiConfig.NormalizedReadDirs(), os.Stat)
-	cmd := a.newChatCmd(bin, readDirs)
+	readDirs, missingDirs := splitExistingDirs(pc.NormalizedReadDirs(), os.Stat)
+	cmd := a.newChatCmd(bin, pc.WorkingDir, readDirs)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("chat の stdin 配管に失敗: %w", err)
@@ -382,30 +416,33 @@ func (a *App) ensureProcLocked() error {
 		return fmt.Errorf("tomobit chat の起動に失敗: %w", err)
 	}
 	p := &chatProc{cmd: cmd, stdin: stdin, done: make(chan struct{})}
-	a.proc = p
+	if a.procs == nil {
+		a.procs = map[string]*chatProc{}
+	}
+	a.procs[pane] = p
 
 	// Wait はパイプを閉じるので、両ストリームを飲み切ってから呼ぶ
 	// (os/exec StdoutPipe の規約)。プロセスが死ねば EOF で必ず抜ける。
 	var readers sync.WaitGroup
 	readers.Add(2)
-	sb, sbDiag := a.newScrollbackWriter()
-	go func() { defer readers.Done(); a.pumpViewStream(stdout, sb) }()
-	go func() { defer readers.Done(); a.pumpStream(stderr, "stderr") }()
-	a.reportStartupDiagnostics(missingDirsDiagnostic(missingDirs), sbDiag)
+	sb, sbDiag := a.newScrollbackWriter(pane)
+	go func() { defer readers.Done(); a.pumpViewStream(pane, stdout, sb) }()
+	go func() { defer readers.Done(); a.pumpStream(pane, stderr, "stderr") }()
+	a.reportStartupDiagnostics(pane, missingDirsDiagnostic(missingDirs), sbDiag)
 	go func() {
 		readers.Wait()
 		err := cmd.Wait()
 		close(p.done)
 		a.mu.Lock()
-		if a.proc == p {
-			a.proc = nil // 次の SendLine が再起動する
+		if a.procs[pane] == p {
+			delete(a.procs, pane) // 次の SendLine が再起動する
 		}
 		a.mu.Unlock()
 		msg := ""
 		if err != nil {
 			msg = err.Error()
 		}
-		a.emitEvent(eventChatExit, ExitInfo{Error: msg})
+		a.emitEvent(eventChatExit, ExitInfo{Pane: pane, Error: msg})
 	}()
 	return nil
 }
@@ -414,7 +451,7 @@ func (a *App) ensureProcLocked() error {
 // UTF-8 boundaries: a read that splits a multi-byte character carries the
 // partial tail into the next chunk, because a broken rune inside a JSON
 // string reaches the WebView as replacement characters.
-func (a *App) pumpStream(r io.Reader, channel string) {
+func (a *App) pumpStream(pane string, r io.Reader, channel string) {
 	buf := make([]byte, 4096)
 	var carry []byte
 	for {
@@ -423,13 +460,13 @@ func (a *App) pumpStream(r io.Reader, channel string) {
 			carry = append(carry, buf[:n]...)
 			cut := utf8CompletePrefix(carry)
 			if cut > 0 {
-				a.emitEvent(eventChatOut, OutChunk{Channel: channel, Text: string(carry[:cut])})
+				a.emitEvent(eventChatOut, OutChunk{Pane: pane, Channel: channel, Text: string(carry[:cut])})
 				carry = append(carry[:0], carry[cut:]...)
 			}
 		}
 		if err != nil {
 			if len(carry) > 0 {
-				a.emitEvent(eventChatOut, OutChunk{Channel: channel, Text: string(carry)})
+				a.emitEvent(eventChatOut, OutChunk{Pane: pane, Channel: channel, Text: string(carry)})
 			}
 			return
 		}
@@ -441,7 +478,7 @@ func (a *App) pumpStream(r io.Reader, channel string) {
 // て完全な1行を組み、行ごとに emitViewLine へ渡す。EOF 時に持ち越しが残っていれば
 // 同様に処理する。UTF-8 境界の面倒は要らない — 行は JSON デコードするか丸ごと文字
 // 列化するかで、いずれも完全な行の全バイトを一度に扱う。
-func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
+func (a *App) pumpViewStream(pane string, r io.Reader, sb *scrollbackWriter) {
 	buf := make([]byte, 4096)
 	var carry []byte
 	for {
@@ -456,7 +493,7 @@ func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 				if sb != nil {
 					sb.record(carry[:i])
 				}
-				a.emitViewLine(carry[:i])
+				a.emitViewLine(pane, carry[:i])
 				carry = append(carry[:0], carry[i+1:]...)
 			}
 		}
@@ -465,7 +502,7 @@ func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 				if sb != nil {
 					sb.record(carry)
 				}
-				a.emitViewLine(carry)
+				a.emitViewLine(pane, carry)
 			}
 			if sb != nil {
 				sb.close()
@@ -482,7 +519,7 @@ func (a *App) pumpViewStream(r io.Reader, sb *scrollbackWriter) {
 // 書き込み診断はチャットを止めず、既存の chat:out stderr 経路へ1行流す —
 // ただし発火は呼び出し側 (reportStartupDiagnostics) に返す: a.mu を保持した
 // ままの emitEvent は同じ mutex を取り直してデッドロックする。
-func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
+func (a *App) newScrollbackWriter(pane string) (*scrollbackWriter, string) {
 	if !a.guiConfig.TranscriptCacheEnabled() {
 		// 既定 OFF は同意の設計として正しいが、黙って OFF なのは別の話
 		// (2026-07-26 の応答停止で26分の会話が全損した)。書いていないなら、
@@ -499,7 +536,7 @@ func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
 		dir:   dir,
 		limit: scrollbackTotalLimit,
 		onErr: func(msg string) {
-			a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: msg + "\n"})
+			a.emitEvent(eventChatOut, OutChunk{Pane: pane, Channel: "stderr", Text: msg + "\n"})
 		},
 		// 各行で現在の同意状態を再照合する (W-1): SaveGUIConfig が走行中に OFF へ
 		// 撤回したら、このセッションの以後の書き込みも即座に止まる。a.guiConfig は
@@ -509,6 +546,9 @@ func (a *App) newScrollbackWriter() (*scrollbackWriter, string) {
 			defer a.mu.Unlock()
 			return a.guiConfig.TranscriptCacheEnabled()
 		},
+		// 今どの窓が書いているか (ADR-0009)。上限の巻き添えから守る集合の材料で、
+		// 走行中の隣の窓のスクロールバックが古い順で消えるのを防ぐ。
+		live: a.liveSIDs,
 	}, ""
 }
 
@@ -533,7 +573,7 @@ func missingDirsDiagnostic(missing []string) string {
 // scrollback wiring) to the stderr 面. 別 goroutine で流すのは a.mu のため:
 // 呼び出し元の ensureProcLocked はロックを保持しており、emitEvent は同じ
 // mutex を取る。空文字は「言うことが無い」なので落とす。
-func (a *App) reportStartupDiagnostics(notes ...string) {
+func (a *App) reportStartupDiagnostics(pane string, notes ...string) {
 	var lines []string
 	for _, note := range notes {
 		if note != "" {
@@ -545,7 +585,7 @@ func (a *App) reportStartupDiagnostics(notes ...string) {
 	}
 	go func() {
 		for _, line := range lines {
-			a.emitEvent(eventChatOut, OutChunk{Channel: "stderr", Text: line + "\n"})
+			a.emitEvent(eventChatOut, OutChunk{Pane: pane, Channel: "stderr", Text: line + "\n"})
 		}
 	}()
 }
@@ -555,24 +595,28 @@ func (a *App) reportStartupDiagnostics(notes ...string) {
 // 未知 type の無視は消費者=フロントエンドの責務。JSON デコードに失敗した行は
 // 握り潰さず note にフォールバックする: stdout は契約上 全量 NDJSON なので、
 // 非JSON行は本体のバグであり、可視化して黙らせない。
-func (a *App) emitViewLine(line []byte) {
+func (a *App) emitViewLine(pane string, line []byte) {
 	line = bytes.TrimSuffix(line, []byte("\r"))
 	if len(line) == 0 {
 		return
 	}
 	var ev map[string]any
 	if err := json.Unmarshal(line, &ev); err != nil {
-		a.emitEvent(eventChatView, map[string]any{"type": "note", "text": string(line)})
+		a.emitEvent(eventChatView, ViewEvent{Pane: pane,
+			Event: map[string]any{"type": "note", "text": string(line)}})
 		return
 	}
-	a.trackTaskBoundary(ev)
-	a.emitEvent(eventChatView, ev)
+	a.trackTaskBoundary(pane, ev)
+	// The view event is delivered with its addressee. The body is the body's
+	// own contract (本体 ADR-0032) and must not be edited, so the pane rides
+	// beside it rather than inside it.
+	a.emitEvent(eventChatView, ViewEvent{Pane: pane, Event: ev})
 }
 
 // trackTaskBoundary follows task.started / task.finished|cancelled so
 // SetWorkspace knows whether a task is open (see chatProc.taskOpen). 未知の
 // type は無視する — 契約どおり (本体 ADR-0032)。
-func (a *App) trackTaskBoundary(ev map[string]any) {
+func (a *App) trackTaskBoundary(pane string, ev map[string]any) {
 	typ, _ := ev["type"].(string)
 	var open bool
 	switch typ {
@@ -584,9 +628,34 @@ func (a *App) trackTaskBoundary(ev map[string]any) {
 		return
 	}
 	a.mu.Lock()
-	p := a.proc
+	p := a.procForLocked(pane)
 	a.mu.Unlock()
-	if p != nil {
-		p.setTaskOpen(open)
+	if p == nil {
+		return
 	}
+	p.setTaskOpen(open)
+	if open {
+		sid, _ := ev["sid"].(string)
+		p.setSID(sid)
+	} else {
+		p.setSID("")
+	}
+}
+
+// liveSIDs lists the session ids currently open across all panes (ADR-0009).
+// 走っているプロセスの task が開いていない窓は sid を持たないので数えない —
+// 守る必要があるのは「今まさに書かれているファイル」だけである。
+func (a *App) liveSIDs() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sids := make([]string, 0, len(a.procs))
+	for _, p := range a.procs {
+		if p == nil {
+			continue
+		}
+		if sid := p.currentSID(); sid != "" {
+			sids = append(sids, sid)
+		}
+	}
+	return sids
 }

@@ -17,11 +17,11 @@ import (
 func TestNewScrollbackWriter_既定OFFでは書き手を作らない(t *testing.T) {
 	// キー無し(未設定) = OFF: newScrollbackWriter が nil を返し、pumpViewStream は
 	// sb == nil で record を一切呼ばない = 1バイトも書かれない。
-	if w, _ := (&App{}).newScrollbackWriter(); w != nil {
+	if w, _ := (&App{}).newScrollbackWriter(mainPane); w != nil {
 		t.Errorf("transcript_cache 未設定なのに書き手が作られた")
 	}
 	off := false
-	if w, _ := (&App{guiConfig: GUIConfig{TranscriptCache: &off}}).newScrollbackWriter(); w != nil {
+	if w, _ := (&App{guiConfig: GUIConfig{TranscriptCache: &off}}).newScrollbackWriter(mainPane); w != nil {
 		t.Errorf("transcript_cache=false なのに書き手が作られた")
 	}
 }
@@ -152,7 +152,7 @@ func TestEnforceScrollbackLimit_上限超過で古い順に削り書き込み中
 
 	// 総量 300、上限 250。keep=oldest は書き込み中として守る。古い順に削るので
 	// 非keepの最古 mid が消え、それで 200 <= 250 に収まり newest は残る。
-	enforceScrollbackLimit(dir, 250, oldest, nil)
+	enforceScrollbackLimit(dir, 250, map[string]bool{oldest: true}, nil)
 
 	if _, err := os.Stat(oldest); err != nil {
 		t.Errorf("書き込み中(keep)が削除された")
@@ -193,7 +193,7 @@ func TestPumpViewStream_OFFではスクロールバックを1バイトも生成�
 	app := NewApp() // guiConfig ゼロ値 = transcript_cache 未設定 = OFF
 	app.emit = func(string, ...interface{}) {}
 
-	sb, _ := app.newScrollbackWriter()
+	sb, _ := app.newScrollbackWriter(mainPane)
 	if sb != nil {
 		t.Fatal("OFF なのに書き手が作られた")
 	}
@@ -206,7 +206,7 @@ func TestPumpViewStream_OFFではスクロールバックを1バイトも生成�
 		[]byte("{\"type\":\"text\",\"text\":\"hi\"}\n"),
 		[]byte("{\"type\":\"turn.finished\",\"duration_ms\":1}\n"),
 	}
-	app.pumpViewStream(&chunkReader{chunks: lines}, sb)
+	app.pumpViewStream(mainPane, &chunkReader{chunks: lines}, sb)
 
 	if _, err := os.Stat(filepath.Join(dir, "gui-scrollback")); !os.IsNotExist(err) {
 		t.Errorf("OFF なのに scrollback ディレクトリが生成された")
@@ -288,5 +288,40 @@ func TestGUIConfig_transcriptCache後方互換(t *testing.T) {
 	}
 	if load(`{"transcript_cache":false}`).TranscriptCacheEnabled() {
 		t.Errorf("明示 false が OFF にならない")
+	}
+}
+
+// 窓が複数あれば、上限の巻き添えから守るのは自分1つではない (ADR-0009)。
+// 開いたばかりの窓だけを keep にすると、**走行中の隣の窓のスクロールバックを
+// 古い順で消す** — 会話が終わる前に読み返せなくなる。
+func TestEnforceScrollbackLimit_走行中の他の窓を巻き添えにしない(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, size int, age time.Duration) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		old := time.Now().Add(-age)
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// 隣の窓が一番古い = 素朴な実装なら真っ先に消える。
+	neighbour := write("live-neighbour.ndjson", 200, 3*time.Hour)
+	stale := write("finished.ndjson", 200, 2*time.Hour)
+	mine := write("live-mine.ndjson", 200, time.Minute)
+
+	enforceScrollbackLimit(dir, 250, map[string]bool{mine: true, neighbour: true}, nil)
+
+	if _, err := os.Stat(neighbour); err != nil {
+		t.Errorf("走行中の隣の窓が消された: %v", err)
+	}
+	if _, err := os.Stat(mine); err != nil {
+		t.Errorf("自分の窓が消された: %v", err)
+	}
+	// 終わったセッションは従来どおり回収される（劣化であって喪失ではない）。
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("上限超過分は削られる: %v", err)
 	}
 }

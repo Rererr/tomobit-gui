@@ -13,7 +13,7 @@ import (
 func TestNewScrollbackWriter_残さない設定なら書かずに一言添える(t *testing.T) {
 	app := NewApp()
 	// transcript_cache 未設定 = 既定 OFF（キー無しは false 扱い）。
-	sb, diag := app.newScrollbackWriter()
+	sb, diag := app.newScrollbackWriter(mainPane)
 
 	if sb != nil {
 		t.Fatal("同意が無いのに書き手を作っている")
@@ -33,7 +33,7 @@ func TestNewScrollbackWriter_残す設定なら黙って書く(t *testing.T) {
 	on := true
 	app.guiConfig.TranscriptCache = &on
 
-	sb, diag := app.newScrollbackWriter()
+	sb, diag := app.newScrollbackWriter(mainPane)
 
 	if sb == nil {
 		t.Fatal("同意があるのに書き手を作っていない")
