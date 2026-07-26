@@ -8,6 +8,8 @@ import { appendBlocksTo } from "./appendBlocks";
 import { budgetToolResult } from "./displayBudget";
 import { parseBoundaryQuestion } from "./boundaryChoices";
 import type { BoundaryQuestion } from "./boundaryChoices";
+import { parsePermissionEvent } from "./permission";
+import type { PermissionRequest } from "./permission";
 import { advanceActivity, startActivity } from "./activity";
 import type { Activity, ActivityPhase } from "./activity";
 
@@ -45,6 +47,9 @@ export interface ChatSession {
   closing: boolean;
   closingQuestion: BoundaryQuestion | null;
   closingNotes: string[];
+  /** Provider が権限を求めている問い (本体 ADR-0053)。null は求められていない。 */
+  permission: PermissionRequest | null;
+  answerPermission: (send: string) => void;
   send: (draft: string) => void;
   newChat: () => Promise<void>;
   answerClosing: (send: string) => void;
@@ -100,6 +105,10 @@ export function useChatSession(
   const [closing, setClosing] = useState(false);
   const [closingQuestion, setClosingQuestion] = useState<BoundaryQuestion | null>(null);
   const [closingNotes, setClosingNotes] = useState<string[]>([]);
+  // 権限の問い (本体 ADR-0053 Decision 5)。答えるまで出したままにする —
+  // 消えると、モデルが「許可をいただけますか」と言ったまま答える口が無い、
+  // という ADR-0053 が直そうとした状態にそのまま戻る。
+  const [permission, setPermission] = useState<PermissionRequest | null>(null);
   // decided（本体 ADR-0040）は自分の task.started より先に届きうるので一時的に持つ。
   const pendingDecidedRef = useRef<DecidedEvent | null>(null);
   const activeDecidedRef = useRef<DecidedEvent | null>(null);
@@ -272,6 +281,24 @@ export function useChatSession(
         setMessages((prev) => [...prev, { id: createMessageId(), kind: "note", text, await: awaiting }]);
         break;
       }
+      case "permission": {
+        // 文面から種類を当てず、type で判る形で本体が出している。
+        const req = parsePermissionEvent(ev as unknown as Record<string, unknown>, parseBoundaryQuestion);
+        if (req !== null) {
+          setPermission(req);
+        }
+        // 読めなかった場合もログには残る（下の note と同じ経路を通らないので、
+        // ここで1行積む）— 答える道を完全に消さない。
+        const text = asString(ev.text);
+        if (req === null && text !== undefined && text !== "") {
+          setMessages((prev) => [
+            ...prev,
+            { id: createMessageId(), kind: "note", text, await: true },
+          ]);
+          setBoundary(true);
+        }
+        break;
+      }
       case "task.finished":
       case "task.cancelled": {
         setBoundary(false);
@@ -397,6 +424,12 @@ export function useChatSession(
     void sendLine(text);
   }
 
+  // 許可の答えは普通の1行として本体へ返る（本体が入力欄と同じ口で読んでいる）。
+  function answerPermission(text: string) {
+    setPermission(null);
+    void sendLine(text);
+  }
+
   function abandonBoundary() {
     setClosingMode(false);
     void AbandonBoundary();
@@ -409,6 +442,8 @@ export function useChatSession(
     closing,
     closingQuestion,
     closingNotes,
+    permission,
+    answerPermission,
     send,
     newChat,
     answerClosing,

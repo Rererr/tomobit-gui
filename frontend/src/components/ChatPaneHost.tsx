@@ -1,5 +1,6 @@
 import { ChatPane } from "./ChatPane";
 import { ClosingDialog } from "./ClosingDialog";
+import { PermissionDialog } from "./PermissionDialog";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { RunCommandProvider } from "./RunCommandProvider";
 import { RunCommand } from "../../wailsjs/go/main/App";
@@ -100,6 +101,11 @@ export function ChatPaneHost({
             </>
           }
         />
+        {/* 権限の問い (本体 ADR-0053)。締めのダイアログと同じく窓の中に出る —
+            他の窓は動き続ける (ADR-0009 Decision 4 と同じ理由)。 */}
+        {chat.permission !== null && (
+          <PermissionDialog request={chat.permission} onAnswer={chat.answerPermission} />
+        )}
         {chat.closing && (
           <ClosingDialog
             question={chat.closingQuestion}
