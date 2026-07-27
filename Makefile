@@ -24,7 +24,7 @@ ifeq ($(GOOS),windows)
 LDFLAGS := $(LDFLAGS) -H windowsgui
 endif
 
-.PHONY: dev build install uninstall frontend test
+.PHONY: dev build install uninstall frontend test docs-check
 
 # ホットリロード開発（localhost:34115 でブラウザからも駆動可）
 dev:
@@ -50,3 +50,7 @@ uninstall:
 
 test:
 	go test ./...
+
+# ADR相対リンクの参照先が実在するかを検査する。
+docs-check:
+	@bash tools/check-adr-links.sh

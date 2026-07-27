@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  # ドキュメント検査は Go にも Wails にも依存しないので、macOS ランナーを
+  # 待たせずに済むよう test とは別ジョブにする。
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ADRの `関連:` ブロックは参照先の表題の記憶から書かれがちで、
+      # ファイル名とずれても人間の目には読めてしまう。機械で見る。
+      - name: ADRリンクの参照先
+        run: make docs-check
+
   # GUIの前提は macOS (README「セットアップ」)。Wails は Linux では webkit2gtk を
   # 要求するため、対応を宣言していないプラットフォームを CI で偽装しない。
   test:

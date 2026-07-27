@@ -31,8 +31,13 @@ GUIは**第三のレンダラ**であって、新しい真実を作りません
 gofmt -l .        # 出力が空であること
 go vet ./...
 go test ./...
+make docs-check   # ADRリンクの参照先が実在すること
 cd frontend && npm test && npx tsc --noEmit
 ```
+
+ドキュメントだけの変更でも `make docs-check` は通してください。ADRの
+`関連:` ブロックは参照先の表題の記憶から書かれがちで、ファイル名とずれても
+人間の目には読めてしまいます。
 
 実GUIの通し検証の手順は [.claude/skills/verify/SKILL.md](.claude/skills/verify/SKILL.md) に
 あります。**実台帳を検証に使わないでください** — 実会話がログやスクリーンショットに写ります。
