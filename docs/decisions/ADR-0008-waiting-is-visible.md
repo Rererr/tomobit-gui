@@ -5,7 +5,7 @@
 - 関連: [ADR-0001](ADR-0001-gui-architecture.md)（Decision 1: GUIは第三のレンダラ。新しい真実を作らない）,
   [ADR-0005](ADR-0005-closing-boundary.md)（×で固まって見えた15秒の正体を前に出す）,
   本体 [ADR-0032](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0032-pipe-chat-first-class.md)（view ストリームの語彙 — `ready` / `await` の note）,
-  本体 [ADR-0040](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0040-why-this-provider.md)（`decided` = なぜこのProviderか）
+  本体 [ADR-0040](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0040-decision-audit-view.md)（`decided` = なぜこのProviderか）
 
 ---
 

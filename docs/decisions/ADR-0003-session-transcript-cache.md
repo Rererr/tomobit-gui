@@ -7,7 +7,7 @@
 - 関連: [ADR-0001](ADR-0001-gui-architecture.md)（Consequences の Open Question「全文の
   表示専用キャッシュを持つか」/ Decision 2: GUIは新しい真実を作らない）,
   本体 [ADR-0018](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0018-experience-sovereignty.md)（経験主権）,
-  本体 [ADR-0033](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0033-forgetting-organ.md)/[ADR-0034](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0034-forgetting-reach.md)（忘却の到達範囲）
+  本体 [ADR-0033](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0033-organ-of-forgetting.md)/[ADR-0034](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0034-forgetting-reach.md)（忘却の到達範囲）
 
 ---
 

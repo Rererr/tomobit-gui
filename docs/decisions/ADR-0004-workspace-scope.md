@@ -7,7 +7,7 @@
 - Date: 2026-07-25
 - 関連: [ADR-0001](ADR-0001-gui-architecture.md)（Decision 2: 会話の経路 = `tomobit chat` 子プロセス /
   Decision 4: 好みの喋り方 = Provider起動引数への注入・反映境界 = セッション境界）,
-  本体 [ADR-0021](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0021-wiring-is-not-experience.md)（配線は経験ではない）,
+  本体 [ADR-0021](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0021-onboarding.md)（配線は経験ではない）,
   本体 [ADR-0043](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0043-auto-by-default.md)（Provider選択）
 
 ---

@@ -4,7 +4,7 @@
 - Date: 2026-07-25
 - 関連: [ADR-0001](ADR-0001-gui-architecture.md)（Decision 1: 器官は再実装せず透過させる /
   Decision 4 追記: 反映境界 = セッション境界 = プロセス境界）,
-  本体 [ADR-0006](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0006-experience-first.md)（Decision 4: 締めの Feedback）,
+  本体 [ADR-0006](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0006-executor-integration.md)（Decision 4: 締めの Feedback）,
   本体 [ADR-0032](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0032-pipe-chat-first-class.md)（Decision 1: `await` 付き note）,
   本体 [ADR-0035](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0035-boundary-organs-reach-the-pipe.md)（境界の器官が pipe にも届く）
 

@@ -5,7 +5,7 @@
 - 関連: [ADR-0004](ADR-0004-workspace-scope.md)（Decision 1: 作業ディレクトリ =
   chat 子プロセスの `cmd.Dir`）,
   [ADR-0003](ADR-0003-session-transcript-cache.md)（会話の全文の永続は明示 opt-in）,
-  本体 [ADR-0021](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0021-wiring-is-not-experience.md)（配線は経験ではない）,
+  本体 [ADR-0021](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0021-onboarding.md)（配線は経験ではない）,
   本体 [ADR-0049](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0049-quota-observation-is-opt-in.md)（沈黙は同意ではない）
 
 ---

@@ -39,6 +39,10 @@ cd frontend && npm test && npx tsc --noEmit
 `関連:` ブロックは参照先の表題の記憶から書かれがちで、ファイル名とずれても
 人間の目には読めてしまいます。
 
+本体 tomobit を隣（このリポジトリの親ディレクトリ）に置いていれば、本体の
+ADRを指すURLの参照先も見ます。置いていなければその分は検査せず、何本見な
+かったかを言います。探す場所は `ADR_LINK_SIBLINGS` で変えられます。
+
 実GUIの通し検証の手順は [.claude/skills/verify/SKILL.md](.claude/skills/verify/SKILL.md) に
 あります。**実台帳を検証に使わないでください** — 実会話がログやスクリーンショットに写ります。
 
