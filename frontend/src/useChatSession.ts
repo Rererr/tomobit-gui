@@ -5,6 +5,7 @@ import type { ChatMessage, DecidedEvent, StreamChannel, TurnBlock } from "./type
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
 import { appendBlocksTo } from "./appendBlocks";
+import { SubtaskFrames } from "./subtaskFrames";
 import { budgetToolResult } from "./displayBudget";
 import { parseBoundaryQuestion } from "./boundaryChoices";
 import type { BoundaryQuestion } from "./boundaryChoices";
@@ -97,8 +98,14 @@ export function useChatSession(
   const expectedExitRef = useRef(false);
   // 現在開いている Tomo のターン枠の id。
   const openTurnIdRef = useRef<string | null>(null);
+  // 分割のサブタスクの枠。並走すると同時に複数開くので、ひとつの「いま開いて
+  // いる枠」では足りない（本体 ADR-0056 / ADR-0032 の sub）。当て先の規則は
+  // 過去の再生（viewFold）と共有する。
+  const subFramesRef = useRef(new SubtaskFrames<string>());
   // 到着したブロックの溜め場とフレーム1回のフラッシュ予約 (appendBlocks.ts)。
-  const pendingBlocksRef = useRef<TurnBlock[]>([]);
+  // 枠の id ごとに分ける — 並走中は宛先が同時に複数あり、1本の配列に混ぜると
+  // 隣の子の本文が自分の枠へ流れ込む。
+  const pendingBlocksRef = useRef<Map<string, TurnBlock[]>>(new Map());
   const flushHandleRef = useRef<number | null>(null);
   // 窓の×が始めた締め (ADR-0005)。
   const closingRef = useRef(false);
@@ -162,19 +169,47 @@ export function useChatSession(
       flushHandleRef.current = null;
     }
     const pending = pendingBlocksRef.current;
-    if (pending.length === 0) {
+    if (pending.size === 0) {
       return;
     }
-    pendingBlocksRef.current = [];
-    const openId = openTurnIdRef.current;
-    setMessages((prev) => appendBlocksTo(prev, openId, pending));
+    pendingBlocksRef.current = new Map();
+    // 枠ごとに1回ずつ流し込む。ひとつのフレームで複数の子が届いても、
+    // メッセージ配列の複製は宛先の数だけで、到着件数には比例しない
+    // （appendBlocks.ts が直した二次曲線の性質はそのまま保つ）。
+    setMessages((prev) => {
+      let next = prev;
+      for (const [id, blocks] of pending) {
+        next = appendBlocksTo(next, id, blocks);
+      }
+      return next;
+    });
   }
 
-  function appendBlock(block: TurnBlock) {
-    if (openTurnIdRef.current === null) {
-      openTurnIdRef.current = createMessageId();
+  /** この行の宛先の枠 id。無ければ開く（turn.started より先に本文が来た場合）。 */
+  function targetTurnId(sub: number | undefined): string {
+    if (sub === undefined) {
+      if (openTurnIdRef.current === null) {
+        openTurnIdRef.current = createMessageId();
+      }
+      return openTurnIdRef.current;
     }
-    pendingBlocksRef.current.push(block);
+    const known = subFramesRef.current.target(sub, null);
+    if (known !== null) {
+      return known;
+    }
+    const id = createMessageId();
+    subFramesRef.current.start(sub, id);
+    return id;
+  }
+
+  function appendBlock(block: TurnBlock, sub: number | undefined) {
+    const id = targetTurnId(sub);
+    const buf = pendingBlocksRef.current.get(id);
+    if (buf === undefined) {
+      pendingBlocksRef.current.set(id, [block]);
+    } else {
+      buf.push(block);
+    }
     if (flushHandleRef.current === null) {
       flushHandleRef.current = requestAnimationFrame(() => {
         flushHandleRef.current = null;
@@ -197,9 +232,21 @@ export function useChatSession(
       case "turn.started": {
         flushPendingBlocks();
         const id = createMessageId();
-        openTurnIdRef.current = id;
         const n = asNumber(ev.n) ?? 0;
         const provider = asString(ev.provider) ?? "";
+        const sub = asNumber(ev.sub);
+        if (sub !== undefined) {
+          subFramesRef.current.start(sub, id);
+          const subTotal = asNumber(ev.sub_total);
+          setMessages((prev) => [
+            ...prev,
+            subTotal !== undefined
+              ? { id, kind: "turn", n, provider, blocks: [], sub, subTotal }
+              : { id, kind: "turn", n, provider, blocks: [], sub },
+          ]);
+          break;
+        }
+        openTurnIdRef.current = id;
         const decided = activeDecidedRef.current ?? undefined;
         setMessages((prev) => [...prev, { id, kind: "turn", n, provider, blocks: [], decided }]);
         break;
@@ -221,7 +268,7 @@ export function useChatSession(
       case "text": {
         const text = asString(ev.text);
         if (text !== undefined && text !== "") {
-          appendBlock({ kind: "text", text });
+          appendBlock({ kind: "text", text }, asNumber(ev.sub));
         }
         break;
       }
@@ -229,28 +276,35 @@ export function useChatSession(
         const name = asString(ev.name);
         if (name !== undefined) {
           const detail = asString(ev.detail);
-          appendBlock(detail !== undefined ? { kind: "tool", name, detail } : { kind: "tool", name });
+          appendBlock(detail !== undefined ? { kind: "tool", name, detail } : { kind: "tool", name }, asNumber(ev.sub));
         }
         break;
       }
       case "tool_result": {
         const text = asString(ev.text);
         if (text !== undefined) {
-          appendBlock({ kind: "tool_result", text: budgetToolResult(text) });
+          appendBlock({ kind: "tool_result", text: budgetToolResult(text) }, asNumber(ev.sub));
         }
         break;
       }
       case "error": {
         const message = asString(ev.message);
         if (message !== undefined && message !== "") {
-          appendBlock({ kind: "error", message });
+          appendBlock({ kind: "error", message }, asNumber(ev.sub));
         }
         break;
       }
       case "turn.finished": {
         flushPendingBlocks();
-        const id = openTurnIdRef.current;
-        openTurnIdRef.current = null;
+        const sub = asNumber(ev.sub);
+        let id: string | null;
+        if (sub !== undefined) {
+          // 閉じるのは自分の枠だけ。並走中は隣の枠がまだ開いている。
+          id = subFramesRef.current.finish(sub);
+        } else {
+          id = openTurnIdRef.current;
+          openTurnIdRef.current = null;
+        }
         const durationMs = asNumber(ev.duration_ms) ?? 0;
         const costUsd = asNumber(ev.cost_usd);
         setMessages((prev) =>

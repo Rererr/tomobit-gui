@@ -1,6 +1,7 @@
 import type { ChatMessage, DecidedEvent, TurnBlock } from "./types";
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
 import { budgetToolResult } from "./displayBudget";
+import { SubtaskFrames } from "./subtaskFrames";
 
 // 連続する text ブロックはひとつに結合する（App.tsx appendTurnBlock と同じ規律 —
 // 本体は本文を細切れの text で流す）。
@@ -39,19 +40,39 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
 
   // 開いている Tomo のターン枠の index。turn.started で開き turn.finished で閉じる。
   let openTurnIndex = -1;
+  // 分割のサブタスクは自分の枠を持つ。並走すると**同時に複数開く**ので、
+  // ひとつの「いま開いている枠」では足りない（本体 ADR-0056 で並走が実際に
+  // 起きるようになった）。当て先の規則はライブ（useChatSession）と共有する。
+  const subFrames = new SubtaskFrames<number>();
   let pendingDecided: DecidedEvent | undefined;
   let activeDecided: DecidedEvent | undefined;
   // n ごとに一度だけ You を差し込む: fold-back のフィードターンは親と同じ n を
   // 繰り返すので、同じユーザー発話を二重に出さない。
   const emittedUserN = new Set<number>();
 
-  function appendBlock(block: TurnBlock) {
-    if (openTurnIndex < 0) {
-      messages.push({ id: nextId(), kind: "turn", n: 0, provider: "", blocks: [block] });
-      openTurnIndex = messages.length - 1;
+  /** この行がどの枠に属すか。sub を持たない行は会話そのもののターンへ。 */
+  function targetIndex(sub: number | undefined): number {
+    return subFrames.target(sub, openTurnIndex) ?? -1;
+  }
+
+  function appendBlock(block: TurnBlock, sub: number | undefined) {
+    const idx = targetIndex(sub);
+    if (idx < 0) {
+      // 枠が無い行は捨てない — 本文が消えるより、番号だけ持った枠が増える方が
+      // 正直である（本体が turn.started を落としても本文は届く）。
+      const opened: ChatMessage =
+        sub !== undefined
+          ? { id: nextId(), kind: "turn", n: 0, provider: "", blocks: [block], sub }
+          : { id: nextId(), kind: "turn", n: 0, provider: "", blocks: [block] };
+      messages.push(opened);
+      if (sub !== undefined) {
+        subFrames.start(sub, messages.length - 1);
+      } else {
+        openTurnIndex = messages.length - 1;
+      }
       return;
     }
-    const m = messages[openTurnIndex];
+    const m = messages[idx];
     if (m.kind === "turn") {
       m.blocks = appendTurnBlock(m.blocks, block);
     }
@@ -80,11 +101,23 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
       case "turn.started": {
         const n = asNumber(ev.n) ?? 0;
         const provider = asString(ev.provider) ?? "";
+        const sub = asNumber(ev.sub);
         // この Tomo ターンに対応するユーザー発話を台帳から先に差し込む。
+        // サブタスクの枠には差し込まない — あれは人が言ったことではない。
         const intent = userTurnsByN[n];
-        if (intent !== undefined && intent !== "" && !emittedUserN.has(n)) {
+        if (sub === undefined && intent !== undefined && intent !== "" && !emittedUserN.has(n)) {
           emittedUserN.add(n);
           messages.push({ id: nextId(), kind: "user", text: intent });
+        }
+        if (sub !== undefined) {
+          const subTotal = asNumber(ev.sub_total);
+          messages.push(
+            subTotal !== undefined
+              ? { id: nextId(), kind: "turn", n, provider, blocks: [], sub, subTotal }
+              : { id: nextId(), kind: "turn", n, provider, blocks: [], sub },
+          );
+          subFrames.start(sub, messages.length - 1);
+          break;
         }
         messages.push({ id: nextId(), kind: "turn", n, provider, blocks: [], decided: activeDecided });
         openTurnIndex = messages.length - 1;
@@ -93,7 +126,7 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
       case "text": {
         const text = asString(ev.text);
         if (text !== undefined && text !== "") {
-          appendBlock({ kind: "text", text });
+          appendBlock({ kind: "text", text }, asNumber(ev.sub));
         }
         break;
       }
@@ -101,7 +134,7 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
         const name = asString(ev.name);
         if (name !== undefined) {
           const detail = asString(ev.detail);
-          appendBlock(detail !== undefined ? { kind: "tool", name, detail } : { kind: "tool", name });
+          appendBlock(detail !== undefined ? { kind: "tool", name, detail } : { kind: "tool", name }, asNumber(ev.sub));
         }
         break;
       }
@@ -111,27 +144,34 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
           // ライブと同じ予算で畳む（ADR-0003 Decision 1: 過去表示はライブと
           // 同じ構造化描画）。ここだけ無制限にすると、過去を開いた瞬間に
           // ライブでは載らない量が載ることになる。
-          appendBlock({ kind: "tool_result", text: budgetToolResult(text) });
+          appendBlock({ kind: "tool_result", text: budgetToolResult(text) }, asNumber(ev.sub));
         }
         break;
       }
       case "error": {
         const message = asString(ev.message);
         if (message !== undefined && message !== "") {
-          appendBlock({ kind: "error", message });
+          appendBlock({ kind: "error", message }, asNumber(ev.sub));
         }
         break;
       }
       case "turn.finished": {
-        if (openTurnIndex >= 0) {
-          const m = messages[openTurnIndex];
+        const sub = asNumber(ev.sub);
+        const idx = targetIndex(sub);
+        if (idx >= 0) {
+          const m = messages[idx];
           if (m.kind === "turn") {
             const durationMs = asNumber(ev.duration_ms) ?? 0;
             const costUsd = asNumber(ev.cost_usd);
             m.finished = costUsd !== undefined ? { durationMs, costUsd } : { durationMs };
           }
         }
-        openTurnIndex = -1;
+        // 閉じるのは自分の枠だけ。並走中は隣の枠がまだ開いている。
+        if (sub !== undefined) {
+          subFrames.finish(sub);
+        } else {
+          openTurnIndex = -1;
+        }
         break;
       }
       case "note": {

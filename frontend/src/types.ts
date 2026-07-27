@@ -50,6 +50,11 @@ export interface TurnMessage {
   // 旧本体・do 経由など decided が無い経路では常に undefined —
   // 開示トグルの非表示はこのフィールドの有無だけで決まる。
   decided?: DecidedEvent;
+  /** 分割のサブタスクなら、その1始まりの通し番号と総数（本体 ADR-0032 の
+   *  `sub` / `sub_total`）。並走すると複数の枠が同時に開くので、どの枠に本文を
+   *  足すかは番号でしか決まらない。会話そのもののターンは持たない。 */
+  sub?: number;
+  subTotal?: number;
 }
 
 /** ターン外の器官の発話・注記。await は境界の Feedback 質問（入力欄で答える対象） */

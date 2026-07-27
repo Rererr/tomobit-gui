@@ -158,9 +158,17 @@ function renderBlock(block: FoldedBlock, key: number, streaming: boolean) {
 // 高さ分だけ縦中央に押し流されるため。
 function TurnCard({ message }: { message: TurnMessage }) {
   return (
-    <div className="chat-message chat-message--tomo">
+    <div className={`chat-message chat-message--tomo${message.sub !== undefined ? " chat-message--subtask" : ""}`}>
       <div className="chat-turn-header">
         <span className="chat-message-role">Tomo</span>
+        {/* 分割の子は自分が何本目かを名乗る。並走すると枠が同時に複数開き、
+            並び順だけでは対応が読めない（本体 ADR-0032 の sub / sub_total）。 */}
+        {message.sub !== undefined && (
+          <span className="chat-turn-subtask-chip">
+            サブタスク {message.sub}
+            {message.subTotal !== undefined && `/${message.subTotal}`}
+          </span>
+        )}
         {message.provider !== "" && <span className="chat-turn-provider-chip">{message.provider}</span>}
       </div>
       {message.decided !== undefined && (

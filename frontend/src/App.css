@@ -658,6 +658,24 @@
   border: 1px solid var(--color-text-muted-aa);
 }
 
+/* 分割の子の枠 (本体 ADR-0032 の sub / GUI ADR-0011)。並走すると同時に複数
+   開くので、番号のチップと左の帯で「これは内訳のひとつ」と分かるようにする。
+   会話そのもののターンとは見分けがつくが、別の生き物には見せない —
+   Tomo は一匹で、これはその一匹の仕事の内訳である。 */
+.chat-turn-subtask-chip {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--color-bg-raised);
+  border: 1px solid var(--color-border-input);
+}
+
+.chat-message--subtask {
+  border-left: 2px solid var(--color-border-input);
+  padding-left: 10px;
+}
+
 /* 「なぜこのProviderか」開示(本体 ADR-0040 Decision 2: 既定は畳む)。
    chat-turn-tool-resultと同じネイティブdetails/summary方式。 */
 .chat-turn-decided {
