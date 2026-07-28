@@ -617,8 +617,15 @@
   background-color: var(--color-bg-user-bubble);
 }
 
+/* Tomo 側だけ器を広く取る: 中身が本文だけではなく、作業ログ・ツール出力・
+   判断の監査表まで入る側なので、640pxで折り返すと表が縦に潰れて読めない。
+   右に1割だけ余白を残し、残りは本文へ渡す（自分の発言は右寄せの短文なので
+   640pxのまま — 両側が器いっぱいだと、どちらの声かが寄せで読めなくなる）。
+   max() の下限に元の640pxを置くのは、狭い窓や2x2の格子 (ADR-0009) で
+   90%だけにすると今より狭くなるため。 */
 .chat-message--tomo {
   align-self: flex-start;
+  max-width: max(640px, 90%);
   background-color: var(--color-bg-raised);
 }
 
