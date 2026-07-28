@@ -81,7 +81,7 @@ for (const [fg, bg, label] of TEXT_PAIRS) {
 // 対象外なのでここに置かない — 満たしていない値を表に入れて閾値の方を下げる
 // と、表そのものが意味を失う。
 const NON_TEXT_PAIRS: [string, string, string][] = [
-  // background:transparent のボタン群（.new-chat-btn / .settings-retry-btn /
+  // background:transparent のボタン群（.add-pane-btn / .settings-retry-btn /
   // .memory-act-btn ら）は、この罫だけが「押せる何か」の輪郭になる。
   ["border", "bg-app", "塗り無しボタンの輪郭 on 地"],
   ["border", "bg-sidebar", "塗り無しボタンの輪郭 on サイドバー"],

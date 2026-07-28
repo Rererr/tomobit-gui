@@ -82,6 +82,8 @@ export function ChatPaneHost({
           messages={chat.messages}
           activity={chat.activity}
           onSend={chat.send}
+          onNewChat={() => void chat.newChat()}
+          newChatDisabled={chat.boundaryActive || chat.closing}
           allowEmptySend={chat.boundaryActive}
           workspace={
             <>

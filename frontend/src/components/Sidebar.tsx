@@ -20,7 +20,7 @@ interface SidebarProps {
   usageCollapsed: boolean;
   onToggleTomo: (collapsed: boolean) => void;
   onToggleUsage: (collapsed: boolean) => void;
-  onNewChat: () => void;
+  onAddPane: () => void;
   onSelectPane: (pane: PaneId) => void;
   onSelectSession: (sessionID: string) => void;
 }
@@ -93,7 +93,7 @@ export function Sidebar({
   usageCollapsed,
   onToggleTomo,
   onToggleUsage,
-  onNewChat,
+  onAddPane,
   onSelectPane,
   onSelectSession,
 }: SidebarProps) {
@@ -104,8 +104,15 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <button className="new-chat-btn" onClick={onNewChat}>
-        + New chat
+      {/* 窓を増やす導線 (ADR-0009)。かつてここは「New chat」だったが、New chat
+          （今のチャットの区切り = /exit）は各窓の送信ボタンの上へ移した — 窓が
+          増えることと会話が区切られることは別の出来事で、同じ釦に載せない。 */}
+      <button
+        className="add-pane-btn"
+        onClick={onAddPane}
+        title="窓を増やす — 窓ごとに別のチャットが同時に走る"
+      >
+        + 窓を追加
       </button>
 
       {/* 過去セッションのダイジェスト一覧 (ADR-0001 Consequences): 会話全文は

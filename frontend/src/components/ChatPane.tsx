@@ -4,12 +4,18 @@ import type { ChatMessage } from "../types";
 import type { Activity } from "../activity";
 import { MessageView } from "./ChatMessageView";
 import { ActivityIndicator } from "./ActivityIndicator";
+import { NewChatConfirmDialog } from "./NewChatConfirmDialog";
 
 interface ChatPaneProps {
   messages: ChatMessage[];
   // 動いているあいだだけ非null (ADR-0008)。null は「待つものが無い＝人の番」。
   activity: Activity | null;
   onSend: (draft: string) => void;
+  // 今のチャットを区切って次へ (ADR-0001: New chat = /exit)。押した瞬間には
+  // 走らせず、確認モーダルを挟んでから呼ぶ — 区切りは取り消せない。
+  onNewChat: () => void;
+  // 区切り・締めが既に走っている間は重ねて区切れない。
+  newChatDisabled: boolean;
   // 区切り中は空のままの送信ボタンを許す: 締めのFeedback質問への「Enter=まだ
   // 言えない」をキーボード以外でも実行できるようにする（入力欄の無効化は
   // 質問への回答経路を塞ぐので不可）。
@@ -23,8 +29,17 @@ interface ChatPaneProps {
 // 吸収する程度の遊び。
 const STICK_TO_BOTTOM_THRESHOLD_PX = 80;
 
-export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace }: ChatPaneProps) {
+export function ChatPane({
+  messages,
+  activity,
+  onSend,
+  onNewChat,
+  newChatDisabled,
+  allowEmptySend,
+  workspace,
+}: ChatPaneProps) {
   const [draft, setDraft] = useState("");
+  const [confirmingNewChat, setConfirmingNewChat] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -144,14 +159,38 @@ export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace
           placeholder="Tomoにメッセージを送る（Enterで送信 / Shift+Enterで改行）"
           rows={3}
         />
-        <button
-          className="chat-send-btn"
-          onClick={submitDraft}
-          disabled={draft.trim() === "" && !allowEmptySend}
-        >
-          {draft.trim() === "" && allowEmptySend ? "まだ言えない" : "送信"}
-        </button>
+        <div className="chat-input-actions">
+          <button
+            className="chat-newchat-btn"
+            onClick={() => setConfirmingNewChat(true)}
+            disabled={newChatDisabled}
+            title="今のチャットを区切って、新しいチャットを始める"
+          >
+            New chat
+          </button>
+          <button
+            className="chat-send-btn"
+            onClick={submitDraft}
+            disabled={draft.trim() === "" && !allowEmptySend}
+          >
+            {draft.trim() === "" && allowEmptySend ? "まだ言えない" : "送信"}
+          </button>
+        </div>
       </div>
+      {confirmingNewChat && (
+        <NewChatConfirmDialog
+          onConfirm={() => {
+            setConfirmingNewChat(false);
+            onNewChat();
+            // モーダルへ移ったフォーカスの戻り先。締めの質問へすぐ答えられる。
+            textareaRef.current?.focus();
+          }}
+          onCancel={() => {
+            setConfirmingNewChat(false);
+            textareaRef.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

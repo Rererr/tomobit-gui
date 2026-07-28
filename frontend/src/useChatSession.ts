@@ -463,6 +463,9 @@ export function useChatSession(
       return;
     }
     if (!started) {
+      // 確認モーダルを経て来た操作が黙って何もしないと壊れて見える。区切る
+      // 対象が無い＝もう境界の上に居る、をそのまま言う。
+      appendSystem("区切る走行中のチャットは無い — 次の送信がそのまま新しいチャットを始める");
       return;
     }
     expectedExitRef.current = true;

@@ -251,7 +251,7 @@ function App() {
         usageCollapsed={guiConfig?.sidebar_usage_collapsed ?? false}
         onToggleTomo={(collapsed) => saveSidebarFold({ sidebar_tomo_collapsed: collapsed })}
         onToggleUsage={(collapsed) => saveSidebarFold({ sidebar_usage_collapsed: collapsed })}
-        onNewChat={() => void handleAddPane()}
+        onAddPane={() => void handleAddPane()}
         onSelectPane={setActivePane}
         onSelectSession={handleSelectSession}
       />

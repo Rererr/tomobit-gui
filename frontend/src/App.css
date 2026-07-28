@@ -22,7 +22,7 @@
   --color-bg-user-bubble: #2e3138;
   --color-bg-note-await: #2a2318; /* 境界のFeedback質問を強調する下地 */
 
-  /* border は「塗りを持たない部品の唯一の輪郭」になる（.new-chat-btn ら
+  /* border は「塗りを持たない部品の唯一の輪郭」になる（.add-pane-btn ら
      background:transparent のボタン群）。旧 #3a3d4d は地に対して 1.5〜1.8:1
      しかなく、輪郭として見えていなかった — WCAG 1.4.11 の 3:1 を満たす所まで
      上げる。装飾の区切り線は border-subtle 側に置いたままにする（1.4.11 は
@@ -134,7 +134,7 @@
   padding: 12px;
 }
 
-.new-chat-btn {
+.add-pane-btn {
   padding: 10px 12px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
@@ -145,7 +145,7 @@
   font-size: 14px;
 }
 
-.new-chat-btn:hover {
+.add-pane-btn:hover {
   background-color: var(--color-bg-raised);
 }
 
@@ -1358,8 +1358,38 @@
   border-color: var(--color-focus);
 }
 
+/* 送信の上に New chat を積む縦2段。入力欄が伸びても釦の塊は下端に居る */
+.chat-input-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* New chat は塗り無しの控えめな姿 — CTA（送信）と同じ重さに見せない。
+   輪郭は .add-pane-btn らと同じ border トークン（1.4.11 の 3:1 は
+   contrast.test.ts が面ごとに実測している） */
+.chat-newchat-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.chat-newchat-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-raised);
+}
+
+.chat-newchat-btn:disabled {
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
 .chat-send-btn {
-  align-self: flex-end;
   padding: 10px 18px;
   border-radius: 8px;
   border: none;
