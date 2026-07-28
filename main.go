@@ -14,6 +14,9 @@ import (
 var assets embed.FS
 
 func main() {
+	// 親（濾過器）モードならこの中で exit し、以降は子だけが GUI として続く。
+	suppressMacOSStderrNoise()
+
 	app := NewApp()
 
 	err := wails.Run(&options.App{
