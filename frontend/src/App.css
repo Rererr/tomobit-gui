@@ -57,11 +57,16 @@
   --color-warning-bright: #ecdfc9;
 }
 
+/* 外枠は「スクロールする箱」であってはならない。overflow:hidden は見た目を
+   切るだけで箱自体はスクロール可能なまま残り、scrollIntoView() や focus() が
+   アプリ全体をずり上げられてしまう —— しかもスクロールバーが無いので人は
+   戻せない（2026-07-29 の不具合。ChatPane の追従を参照）。clip は箱そのものを
+   作らないので、この経路が将来また生えても外枠は動かない。 */
 #app {
   display: flex;
   flex-direction: row;
   height: 100vh;
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* 視覚的には隠すがスクリーンリーダーには読ませる（table captionなど） */
@@ -2037,6 +2042,10 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* 窓が縮みきれない時（入力欄と作業バーには下限がある）、あふれる分はこの枠で
+     止める。止めないと隣の窓の上へ描かれ、さらに外枠の丈まで押し広げていた。
+     hidden ではなく clip なのは #app と同じ理由 — 掴めない箱を作らない。 */
+  overflow: clip;
   background-color: var(--color-bg-app);
 }
 

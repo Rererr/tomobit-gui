@@ -26,7 +26,6 @@ const STICK_TO_BOTTOM_THRESHOLD_PX = 80;
 export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace }: ChatPaneProps) {
   const [draft, setDraft] = useState("");
   const [stickToBottom, setStickToBottom] = useState(true);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const chatLogRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // エフェクトはmessages更新のたびに走るが、追従の可否は直前のスクロール位置
@@ -38,13 +37,31 @@ export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace
     setStickToBottom(v);
   }
 
+  // 最下部への張り付きは、ログ自身のスクロール箱だけを動かして行う。
+  //
+  // 末尾の番兵divへの scrollIntoView() ではいけない: 既定は block:"start" で、
+  // しかも「スクロールできる祖先を全部」動かす。#app は overflow:hidden ——
+  // hidden は「人が掴めない」だけで、プログラムからは動く箱である。窓が短くて
+  // 格子の中身がはみ出していると、この1行がアプリの外枠ごと上へずり上げ、
+  // スクロールバーも無いので二度と戻せなくなっていた（2026-07-29: 三窓目で
+  // 送信すると見える範囲が下部だけになる不具合。三窓目なのは、3窓の格子だけが
+  // 2行を要求して縦にはみ出しやすく、その2行目が三窓目だから）。
+  // scrollTop への代入なら、触るのはこの箱ひとつだけで祖先へ波及しない。
+  function scrollLogToBottom() {
+    const el = chatLogRef.current;
+    if (el === null) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }
+
   // 追従中の時だけ自動スクロールする: 読み返しで上にスクロールした最中に
   // ストリームの新着で最下部へ引き戻される問題を避ける（実機で確認された挙動）。
   // 実行中の帯 (ADR-0008) もログの高さを変えるので同じ追従に乗せる — 出た瞬間に
   // 画面外へはみ出したのでは、進捗を見せるために置いた帯が見えない。
   useEffect(() => {
     if (stickToBottomRef.current) {
-      bottomRef.current?.scrollIntoView();
+      scrollLogToBottom();
     }
   }, [messages, activity]);
 
@@ -58,7 +75,7 @@ export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace
   }
 
   function jumpToBottom() {
-    bottomRef.current?.scrollIntoView();
+    scrollLogToBottom();
     setStick(true);
   }
 
@@ -108,7 +125,6 @@ export function ChatPane({ messages, activity, onSend, allowEmptySend, workspace
         {/* 進捗が1つも来ないあいだ、動いていることを言う唯一の場所 (ADR-0008)。
             会話の末尾に置くのは、待っている人の目が既にそこにあるから */}
         {activity !== null && <ActivityIndicator activity={activity} />}
-        <div ref={bottomRef} />
       </div>
       {!stickToBottom && (
         <button className="chat-jump-bottom-btn" onClick={jumpToBottom}>
