@@ -414,6 +414,11 @@ working_dir で走り（`test.result` × 2）、知覚は 43ms 差で両方と�
    プロトコル文に「許可が得られない場合も false で宣言せよ」を足すのが
    実装時ノブの筆頭になる
 
+> **どちらも解決済み（2026-07-27）**: 論点1は [ADR-0013](ADR-0013-permission-is-shown-before-it-is-granted.md) —
+> GUI は権限モードを渡さず、本体が流す権限要求を問いのモーダルへ翻訳する。
+> 論点2は本体 [ADR-0053](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0053-permission-is-asked.md)
+> が引き取り、既定を `auto` にしたうえで許可を人に訊く経路そのものを作った。
+
 ---
 
 ## 実装フェーズ（Proposed）
