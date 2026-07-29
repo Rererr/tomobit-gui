@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
+import { useFocusTrap } from "../useFocusTrap";
 
 interface NewChatConfirmDialogProps {
   onConfirm: () => void;
@@ -13,11 +14,14 @@ interface NewChatConfirmDialogProps {
  */
 export function NewChatConfirmDialog({ onConfirm, onCancel }: NewChatConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>();
 
   // 初期フォーカスは「やめておく」側: 開いた直後の Enter 誤爆が区切りを
   // 走らせない向きに倒す（締めのモーダルが Esc を塞ぐのと同じ姿勢）。
+  // preventScroll: true は他2モーダルと同じ理由（focus()自体がスクロールを
+  // 引き起こさないようにする）。
   useEffect(() => {
-    cancelRef.current?.focus();
+    cancelRef.current?.focus({ preventScroll: true });
   }, []);
 
   // こちらの Esc は取り消しに繋ぐ: まだ何も起きていないので、逃げ道は安全。
@@ -29,6 +33,7 @@ export function NewChatConfirmDialog({ onConfirm, onCancel }: NewChatConfirmDial
 
   return (
     <div
+      ref={dialogRef}
       className="closing-backdrop"
       role="dialog"
       aria-modal="true"

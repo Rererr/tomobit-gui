@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { PermissionRequest } from "../permission";
+import { useFocusTrap } from "../useFocusTrap";
 
 interface PermissionDialogProps {
   request: PermissionRequest;
@@ -22,13 +23,18 @@ interface PermissionDialogProps {
  */
 export function PermissionDialog({ request, onAnswer }: PermissionDialogProps) {
   const firstChoiceRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>();
 
+  // preventScroll: true — 未指定だと tool 一覧が長い時にダイアログが許可
+  // ボタンまで自動スクロールし、「何を許すのか」が押す前に見えなくなる
+  // （実測: scrollTop 282 で Tool 1〜6 不可視。ADR-0007 の「見せてから許す」
+  // に反する）。
   useEffect(() => {
-    firstChoiceRef.current?.focus();
+    firstChoiceRef.current?.focus({ preventScroll: true });
   }, [request]);
 
   return (
-    <div className="permission-backdrop" role="dialog" aria-modal="true" aria-label="権限の確認">
+    <div ref={dialogRef} className="permission-backdrop" role="dialog" aria-modal="true" aria-label="権限の確認">
       <div className="permission-dialog">
         <h2 className="permission-title">Tomoが権限を求めている</h2>
 

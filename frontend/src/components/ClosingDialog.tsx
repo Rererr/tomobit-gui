@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoundaryQuestion } from "../boundaryChoices";
+import { useFocusTrap } from "../useFocusTrap";
 
 interface ClosingDialogProps {
   /** 今答えるべき問い。null は「器官が走っている最中で、まだ問いが来ていない」 */
@@ -22,6 +23,7 @@ export function ClosingDialog({ question, notes, onAnswer, onAbandon }: ClosingD
   const [freeText, setFreeText] = useState("");
   const firstChoiceRef = useRef<HTMLButtonElement>(null);
   const freeTextRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>();
 
   // 新しい問いが出るたび、押せるものへフォーカスを置く。連打で次の問いへ
   // 答えてしまわないよう、answering の間はボタンを出さない（下記）。
@@ -31,10 +33,12 @@ export function ClosingDialog({ question, notes, onAnswer, onAbandon }: ClosingD
     }
     setAnswering(false);
     setFreeText("");
+    // preventScroll: true — 未指定だと tool 一覧が長い時と同様、focus() が
+    // ダイアログを勝手にスクロールさせうる（他2モーダルと同じ理由）。
     if (question.choices.length > 0) {
-      firstChoiceRef.current?.focus();
+      firstChoiceRef.current?.focus({ preventScroll: true });
     } else {
-      freeTextRef.current?.focus();
+      freeTextRef.current?.focus({ preventScroll: true });
     }
   }, [question]);
 
@@ -45,10 +49,22 @@ export function ClosingDialog({ question, notes, onAnswer, onAbandon }: ClosingD
 
   const waiting = question === null || answering;
 
+  // 答えた直後は押したボタンごと選択肢がDOMから消え、フォーカスが body へ落ちる。
+  // トラップは「ダイアログ外のフォーカスを奪わない」設計（重なったモーダルとの
+  // 共存のため）なので、落ちたままだと次の問いが来るまで Tab が背面へ流れる。
+  // 器の div 自体（tabIndex=-1）に置いて、留まる場所を絶やさない。
+  // 「待たずに閉じる」に置かないのは、Enter 誤爆が不可逆の放棄に直結するため
+  // （初期フォーカスを安全側へ倒す NewChatConfirmDialog と同じ姿勢）。
+  useEffect(() => {
+    if (waiting) {
+      dialogRef.current?.focus({ preventScroll: true });
+    }
+  }, [waiting]);
+
   return (
     // Escでは閉じない: 締めから逃げる道は「待たずに閉じる」1つだけにして、
     // 取り消せない選択（知覚を捨てる）をキー1つの誤爆から遠ざける。
-    <div className="closing-backdrop" role="dialog" aria-modal="true" aria-label="閉じる前の締め">
+    <div ref={dialogRef} tabIndex={-1} className="closing-backdrop" role="dialog" aria-modal="true" aria-label="閉じる前の締め">
       <div className="closing-dialog">
         <h2 className="closing-title">ここまでを区切っている</h2>
         <p className="closing-lead">
