@@ -40,12 +40,21 @@ interface ViewEventData extends PaneAddressed {
   event: unknown;
 }
 
+/** app:closing の宛先 (ADR-0012 Decision 2)。締めが走り始めた窓だけが載る —
+ *  宛先が1つとは限らないので、他のイベントと違って一覧で来る。 */
+interface ClosingInfoData {
+  panes: string[];
+}
+
 /** 送信・区切りに要る操作と、画面が描くのに要る状態。App はこの形だけを見る。 */
 export interface ChatSession {
   messages: ChatMessage[];
   activity: Activity | null;
   boundaryActive: boolean;
   closing: boolean;
+  /** 締めが終わった（chat:exit が届いた）。closing は立てたまま — 閉じるのは
+   *  全部の窓が揃ってからで、それまでこの窓は「済んだ」姿で並ぶ。 */
+  closingDone: boolean;
   closingQuestion: BoundaryQuestion | null;
   closingNotes: string[];
   /** Provider が権限を求めている問い (本体 ADR-0053)。null は求められていない。 */
@@ -110,6 +119,7 @@ export function useChatSession(
   // 窓の×が始めた締め (ADR-0005)。
   const closingRef = useRef(false);
   const [closing, setClosing] = useState(false);
+  const [closingDone, setClosingDone] = useState(false);
   const [closingQuestion, setClosingQuestion] = useState<BoundaryQuestion | null>(null);
   const [closingNotes, setClosingNotes] = useState<string[]>([]);
   // 権限の問い (本体 ADR-0053 Decision 5)。答えるまで出したままにする —
@@ -383,9 +393,15 @@ export function useChatSession(
       }
       appendStderr(data.text);
     });
-    // 窓の×が締めを始めた (ADR-0005)。アプリ全体の締めなので宛先を持たない。
-    const offClosing = EventsOn("app:closing", () => {
+    // アプリの×が締めを始めた (ADR-0005)。締めモードに入るのは /exit が届いた
+    // 窓だけ (ADR-0012 Decision 2): 載っていない窓はどうせ1枚の裏で、来ない
+    // exit を待つ「振り返っている…」を出す理由が無い。
+    const offClosing = EventsOn("app:closing", (data: ClosingInfoData) => {
+      if (!(data?.panes ?? []).includes(paneId)) {
+        return;
+      }
       setClosingMode(true);
+      setClosingDone(false);
       setClosingQuestion(null);
       setClosingNotes([]);
       setActivity(startActivity("closing", Date.now()));
@@ -409,6 +425,9 @@ export function useChatSession(
         // /exit を送った Go 側だけなので、閉じる判断もそちらに置く
         // (app.go closingPaneExited)。ここで閉じると、最初に終わった窓が
         // 他の窓の知覚を道連れにする。
+        // 締めの1枚では、この窓の節が ✓ になる (ADR-0012 Decision 1)。閉じるまで
+        // 待たされている事実は、まだ答えている他の節が語る。
+        setClosingDone(true);
         // 締めの最中の終了は「区切った」の言い直しなので、ログには積まない。
         return;
       }
@@ -492,8 +511,11 @@ export function useChatSession(
     void sendLine(text);
   }
 
+  // 「待たずに閉じる」(ADR-0005 Decision 3)。締めモードは降ろさない: 放棄は
+  // アプリ全体の行為 (ADR-0012 Decision 3) で、押した窓の締めだけが終わった
+  // わけではない。降ろすと押した窓の節だけが1枚から消え、残った節が答えを
+  // 待ち続ける形になる（実機で観測）— 閉じるまで1枚はそのまま立てておく。
   function abandonBoundary() {
-    setClosingMode(false);
     void AbandonBoundary();
   }
 
@@ -502,6 +524,7 @@ export function useChatSession(
     activity,
     boundaryActive,
     closing,
+    closingDone,
     closingQuestion,
     closingNotes,
     permission,

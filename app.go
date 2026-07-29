@@ -454,9 +454,23 @@ func (a *App) EndTask(pane string) (bool, error) {
 
 // eventBoundaryClosing tells the frontend the window's × started a boundary
 // and is waiting on it (ADR-0005): the questions arrive on the ordinary
-// chat:view stream, so this carries no payload — it only says which mode the
-// screen is in.
+// chat:view stream, so this carries only the addressees — which windows the
+// boundary is actually running in.
 const eventBoundaryClosing = "app:closing"
+
+// ClosingInfo names the panes whose boundary started (ADR-0012 Decision 2).
+//
+// 締めが走るのは /exit が届いた窓だけ（生きている chat がある窓、かつ書き込みが
+// 通った窓）なのに、この合図が宛先を持たなかった頃は全窓が締めモードに入って
+// いた。会話していない窓まで「Tomoが今回を振り返っている…」を出し、来ない exit を
+// 待つ顔をする — 待ち合わせ（closingPanes）からは外れているので閉窓は詰まらない
+// が、表示が実態と食い違う。
+//
+// 並びに意味は持たせない。セクションの順は保存された窓の並び (gui.json) で、
+// 画面はそちらを正本にする。
+type ClosingInfo struct {
+	Panes []string `json:"panes"`
+}
 
 // beforeClose runs on the window's × (Wails OnBeforeClose; true = 閉じない).
 // 窓を閉じる前に走る区切り(ADR-0005 Decision 1): 生きている chat があれば
@@ -530,14 +544,22 @@ func (a *App) beforeClose(_ context.Context) bool {
 	for _, pane := range unreached {
 		delete(a.closingPanes, pane)
 	}
-	nothingLeft := len(a.closingPanes) == 0
+	// 画面へ渡すのは、この時点で締めが走っている窓ぶん (ADR-0012 Decision 2)。
+	// 待つ集合そのものを写すので、「届かなかった窓は待たない」と「載せない」が
+	// 同じ1つの事実から出る — 2か所で別々に絞ると、片方だけ直した日に食い違う。
+	closing := make([]string, 0, len(a.closingPanes))
+	for _, pane := range panes {
+		if a.closingPanes[pane] {
+			closing = append(closing, pane)
+		}
+	}
 	a.mu.Unlock()
 	// 送っている間に全部終わっていたなら待つものはもう無い。ここで差し止めると
 	// 誰も閉じに来ず、×をもう一度押させることになる。
-	if nothingLeft {
+	if len(closing) == 0 {
 		return false
 	}
-	a.emitEvent(eventBoundaryClosing)
+	a.emitEvent(eventBoundaryClosing, ClosingInfo{Panes: closing})
 	return true
 }
 

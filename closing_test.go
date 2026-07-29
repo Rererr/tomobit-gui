@@ -220,6 +220,49 @@ func TestClosingBoundary_区切りを送れなかった窓は待たない(t *tes
 	assertQuit(t, quits, "送れた窓が全部終わっても閉じない — 届かなかった /exit を待ち続けている")
 }
 
+// ADR-0012 Decision 2: 締めモードに入るのは /exit が届いた窓だけ。宛先を持たない
+// 合図のままだと、会話していない窓・既に死んだ chat の窓まで「Tomoが今回を
+// 振り返っている…」を出し、来ない exit を待つ顔をする。
+func TestBeforeClose_締めが走った窓だけを画面へ載せる(t *testing.T) {
+	app := NewApp()
+	var mu sync.Mutex
+	var announced []ClosingInfo
+	app.emit = func(name string, data ...interface{}) {
+		if name != eventBoundaryClosing {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(data) != 1 {
+			t.Errorf("%s の payload = %v, want 締め対象の窓一覧1つ", name, data)
+			return
+		}
+		info, ok := data[0].(ClosingInfo)
+		if !ok {
+			t.Errorf("%s の payload = %#v, want ClosingInfo", name, data[0])
+			return
+		}
+		announced = append(announced, info)
+	}
+	live, _ := pipedProc(t)
+	app.procs["live"] = live
+	app.procs["dead"] = deadProc(t)
+
+	if !app.beforeClose(context.Background()) {
+		t.Fatal("beforeClose = false — 1窓でも送れたなら締めを待つ")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(announced) != 1 {
+		t.Fatalf("%s = %d件, want 1件", eventBoundaryClosing, len(announced))
+	}
+	got := announced[0].Panes
+	if len(got) != 1 || got[0] != "live" {
+		t.Errorf("締め対象 = %v, want [live] — /exit が届かなかった窓まで締めモードに入る", got)
+	}
+}
+
 // 送っている間に全部の締めが終わっていたら、待つものはもう無いので差し止めない
 // — 差し止めると誰も閉じに来ず、×をもう一度押させることになる。子の終了との
 // 競走なので、送信直後の瞬間はテスト注入点 (afterExitsSent) で突く。

@@ -3,6 +3,7 @@ import "./App.css";
 import { Sidebar } from "./components/Sidebar";
 import { GrowthDisclosure } from "./components/GrowthDisclosure";
 import { ChatPaneHost } from "./components/ChatPaneHost";
+import { AppClosingSheet } from "./components/AppClosingSheet";
 import { SettingsPane } from "./components/SettingsPane";
 import { MemoryPane } from "./components/MemoryPane";
 import { SessionPane } from "./components/SessionPane";
@@ -22,6 +23,8 @@ import type { PaneId } from "./types";
 import { errorMessage } from "./errorMessage";
 import { createRefreshCoalescer } from "./ledgerRefreshCoalescer";
 import { paneGridClass, sharedPlaces } from "./panes";
+import { closingSections } from "./closingSheet";
+import type { PaneClosing } from "./closingSheet";
 
 // task.finished/task.cancelled と chat:exit の実測ずれ（一桁〜数十ms）より
 // 十分大きく、境界直後の一覧更新という体感（人には知覚できない背景更新の
@@ -36,6 +39,10 @@ function App() {
   // 締めが走り始めた窓。chat:exit を待ってから実際に畳む — 器官が答えを
   // 聞き終える前に画面ごと消すと、ADR-0005 が直した「答えられない締め」に戻る。
   const closingPanesRef = useRef<Set<string>>(new Set());
+  // アプリの×の締めは App 直下の1枚に集まる (ADR-0012 Decision 1)。窓は自分の
+  // 断面をここへ渡すだけで、縦の並びと器（フォーカス・「待たずに閉じる」）は
+  // アプリの層が持つ — アプリ全体の行為なのだから、窓の中には収まらない。
+  const [closingByPane, setClosingByPane] = useState<Map<string, PaneClosing>>(() => new Map());
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [tomoStatus, setTomoStatus] = useState<main.TomoStatus | null>(null);
   // 姿の資産は動かないので起動時に一度だけ読む（本体 ADR-0048 Decision 2）。
@@ -184,6 +191,23 @@ function App() {
     void loadPanes();
   }
 
+  // 窓が渡してくる締めの断面を預かる。締めていない窓も起動のたびに null を言う
+  // ので、消すものが無ければ前の Map をそのまま返す — 新しい Map を作ると、窓の
+  // 数だけ App が描き直される（窓は Tomo 一匹ぶんの View も抱えている）。
+  function handleClosingState(pane: string, closing: PaneClosing | null) {
+    setClosingByPane((prev) => {
+      if (closing === null) {
+        if (!prev.has(pane)) {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.delete(pane);
+        return next;
+      }
+      return new Map(prev).set(pane, closing);
+    });
+  }
+
   // 働く場所の保存は窓ごと (ADR-0009 Decision 3)。返す文字列はその窓の会話面へ
   // 出す一言で、null は「言うことは無い」。
   async function handleWorkspaceChange(
@@ -236,6 +260,9 @@ function App() {
 
   // 同じ場所で働く窓の観測 (ADR-0009 Decision 6)。判断はしない。
   const shared = sharedPlaces(panes);
+
+  // 締めの走っている窓ぶんのセクション (ADR-0012)。1つでもあれば1枚を出す。
+  const closing = closingSections(panes, closingByPane);
 
   return (
     <div id="app">
@@ -294,6 +321,7 @@ function App() {
               onWorkspaceChange={handleWorkspaceChange}
               onClose={(id) => void handleClosePane(id)}
               onExited={handlePaneExit}
+              onClosingState={handleClosingState}
             />
           ))}
         </div>
@@ -317,6 +345,20 @@ function App() {
           />
         )}
       </main>
+      {/* アプリの×の締め (ADR-0012 Decision 1)。窓の外 — サイドバーも含めて —
+          全部を覆うので、格子の中ではなく main の外に置く。 */}
+      {closing.length > 0 && (
+        <AppClosingSheet
+          sections={closing}
+          onAnswer={(pane, send) => closingByPane.get(pane)?.answer(send)}
+          onAbandon={() => {
+            // Go 側の AbandonBoundary はアプリ全体を捨てる (ADR-0012 Decision 3)。
+            // 呼ぶ口が窓ごとの断面にしか無いので先頭の窓を通しているだけで、
+            // 窓を選んでいるわけではない — どの窓から呼んでも結末は同じ。
+            closingByPane.get(closing[0].paneId)?.abandon();
+          }}
+        />
+      )}
     </div>
   );
 }

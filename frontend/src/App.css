@@ -1921,12 +1921,12 @@
    「今答えるべき問い」だけを前に出す。
    position は fixed ではなく absolute にしてある — ADR-0009 で会話面が
    複数窓に分割された後もここだけ fixed のまま残っており、1窓の締めが
-   画面全体（他の窓・サイドバー）まで暗転させ、他窓を操作不能にしていた
-   （ChatPaneHost 側の「窓の中に出るので他の窓は動き続ける」という説明と
-   矛盾）。ClosingDialog は .chat-pane-host、NewChatConfirmDialog は
-   .chat-pane の直下にあり、どちらも position:relative の窓なので、
-   absolute にすれば inset:0 は窓いっぱいに収まる（.permission-backdrop と
-   同じ形）。 */
+   画面全体（他の窓・サイドバー）まで暗転させ、他窓を操作不能にしていた。
+   今この型を使うのは .chat-pane 直下の NewChatConfirmDialog で、窓は
+   position:relative なので inset:0 が窓いっぱいに収まる
+   （.permission-backdrop と同じ形）。
+   アプリの×の締めだけは画面全体を覆うのが正しいので、そちらは別の器
+   (.closing-sheet-backdrop) を持つ — ADR-0012 Decision 1。 */
 .closing-backdrop {
   position: absolute;
   inset: 0;
@@ -2065,6 +2065,80 @@
 
 .closing-abandon:hover {
   color: var(--color-warning);
+}
+
+/* ── アプリの×の締め: 全窓を1枚に集める (ADR-0012 Decision 1) ──────────────
+   窓ごとの締め（.closing-backdrop）と違い、こちらは画面全体を覆う: アプリ
+   全体を閉じる行為なのだから、窓1つぶんの中に収まるのは意味と食い違う。
+   z-index は窓の中の層（締め 10 / 権限 20）より上に置く — 1枚が立っている
+   間は、どの窓の中のモーダルもこの下になる。 */
+.closing-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: rgba(10, 11, 16, 0.72);
+}
+
+/* 中身は窓ごとのダイアログと同じ型 (.closing-dialog) を継ぐ。セクションが
+   縦に並ぶぶんだけ幅と間隔を広げる。 */
+.closing-sheet {
+  max-width: 560px;
+  gap: 14px;
+}
+
+/* セクションの区切りは線1本。見出しを大きくして階層を作るより、同じ重さの
+   ものが並んでいることを見せる方が「順に答えて帰る」に合う。 */
+.closing-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.closing-section:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.closing-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.closing-section-place {
+  flex: 0 0 auto;
+}
+
+/* 引用は1行に抑える: 最初の依頼が長い窓でも、見出しが本文の高さを食って
+   答える口を画面外へ押し出さないため。全文は title で読める。 */
+.closing-section-quote {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--color-text-muted-aa);
+}
+
+.closing-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--color-text-quiet);
 }
 
 /* ── 会話面の格子 (ADR-0009 Decision 2: 窓は腕) ────────────────────────────
