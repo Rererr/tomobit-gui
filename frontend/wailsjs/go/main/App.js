@@ -62,10 +62,6 @@ export function GetTomoStatus() {
   return window['go']['main']['App']['GetTomoStatus']();
 }
 
-export function QuitNow() {
-  return window['go']['main']['App']['QuitNow']();
-}
-
 export function RunCommand(arg1) {
   return window['go']['main']['App']['RunCommand'](arg1);
 }

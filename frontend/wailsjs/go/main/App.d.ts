@@ -32,8 +32,6 @@ export function GetSpriteSheet():Promise<main.SpriteSheet>;
 
 export function GetTomoStatus():Promise<main.TomoStatus>;
 
-export function QuitNow():Promise<void>;
-
 export function RunCommand(arg1:string):Promise<main.CommandRun>;
 
 export function SaveGUIConfig(arg1:main.GUIConfig):Promise<void>;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AbandonBoundary, EndTask, QuitNow, SendLine } from "../wailsjs/go/main/App";
+import { AbandonBoundary, EndTask, SendLine } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import type { ChatMessage, DecidedEvent, StreamChannel, TurnBlock } from "./types";
 import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
@@ -401,10 +401,15 @@ export function useChatSession(
       setActivity(null);
       ledgerChangeRef.current();
       // 窓を閉じる途中だったなら、締めが終わった今が畳んでよい瞬間
-      // (ADR-0009 Decision 4)。アプリ全体の締めなら窓ではなく窓が閉じる。
+      // (ADR-0009 Decision 4)。
       exitRef.current();
       if (closingRef.current) {
-        void QuitNow();
+        // アプリを閉じるのはここではない。この窓から見えるのは自分の締めだけで、
+        // 隣の窓がまだ答えているかは判らない — 全部揃ったかを知っているのは
+        // /exit を送った Go 側だけなので、閉じる判断もそちらに置く
+        // (app.go closingPaneExited)。ここで閉じると、最初に終わった窓が
+        // 他の窓の知覚を道連れにする。
+        // 締めの最中の終了は「区切った」の言い直しなので、ログには積まない。
         return;
       }
       if (data.error !== "") {

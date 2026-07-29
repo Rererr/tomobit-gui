@@ -26,6 +26,45 @@ func pipedProc(t *testing.T) (*chatProc, *bufio.Reader) {
 	return &chatProc{stdin: w, done: make(chan struct{})}, bufio.NewReader(r)
 }
 
+// deadProc returns a chatProc whose reader is already gone: 書けば EPIPE で、
+// 「既に死んだ chat へは /exit を送れない」場面を作る。
+func deadProc(t *testing.T) *chatProc {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Close()
+	t.Cleanup(func() { w.Close() })
+	return &chatProc{stdin: w, done: make(chan struct{})}
+}
+
+// recordQuits taps the app's quit — wailsruntime.Quit は Wails 無しでは呼べない
+// ので、emit と同じ注入点で「閉じた」を観測する。
+func recordQuits(app *App) <-chan struct{} {
+	quits := make(chan struct{}, 4)
+	app.quit = func() { quits <- struct{}{} }
+	return quits
+}
+
+func assertQuit(t *testing.T, quits <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-quits:
+	case <-time.After(2 * time.Second):
+		t.Fatal(msg)
+	}
+}
+
+func assertNoQuit(t *testing.T, quits <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-quits:
+		t.Fatal(msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestBeforeClose_走行中のchatには区切りを送って閉窓を差し止める(t *testing.T) {
 	app := NewApp()
 	var mu sync.Mutex
@@ -131,6 +170,96 @@ func TestBeforeClose_子が読んでいなくてもUIスレッドを止めない
 	if app.closingBoundary {
 		t.Fatal("走らなかった区切りの最中だと記憶している — 次の×が素通しになる")
 	}
+}
+
+// ADR-0009 Decision 4: 生きている窓すべてに /exit を送り、全部の締めが終わるまで
+// 閉じない。最初に終わった窓で閉じると、まだ知覚を書いている窓のセッションが
+// task.finished を記帳できないまま消える — ADR-0005 が直した信号の欠落が、窓を
+// 増やした分だけ戻る。
+func TestClosingBoundary_全部の窓の締めが終わるまで閉じない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	quits := recordQuits(app)
+	fast, fastIn := pipedProc(t)
+	slow, slowIn := pipedProc(t)
+	app.procs["fast"] = fast
+	app.procs["slow"] = slow
+
+	if !app.beforeClose(context.Background()) {
+		t.Fatal("beforeClose = false — 2窓の締めを走らせる前に閉じてしまう")
+	}
+	for name, in := range map[string]*bufio.Reader{"fast": fastIn, "slow": slowIn} {
+		line, err := in.ReadString('\n')
+		if err != nil || line != "/exit\n" {
+			t.Fatalf("窓 %s へ区切りが届いていない: %q %v", name, line, err)
+		}
+	}
+
+	app.reapProc("fast", fast, nil)
+	assertNoQuit(t, quits, "先に終わった窓だけで閉じた — もう片方の知覚が記帳されないまま消える")
+
+	app.reapProc("slow", slow, nil)
+	assertQuit(t, quits, "全部の締めが終わっても閉じない — ×をもう一度押させることになる")
+}
+
+// 区切りが届かなかった窓は待たない: その窓の締めは走っていないので、答え終わった
+// 窓が全部揃っても最後の1つが永遠に来ず、閉じない窓になる。
+func TestClosingBoundary_区切りを送れなかった窓は待たない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	quits := recordQuits(app)
+	live, _ := pipedProc(t)
+	app.procs["live"] = live
+	app.procs["dead"] = deadProc(t)
+
+	if !app.beforeClose(context.Background()) {
+		t.Fatal("beforeClose = false — 1窓でも送れたなら締めを待つ")
+	}
+
+	app.reapProc("live", live, nil)
+	assertQuit(t, quits, "送れた窓が全部終わっても閉じない — 届かなかった /exit を待ち続けている")
+}
+
+// 送っている間に全部の締めが終わっていたら、待つものはもう無いので差し止めない
+// — 差し止めると誰も閉じに来ず、×をもう一度押させることになる。子の終了との
+// 競走なので、送信直後の瞬間はテスト注入点 (afterExitsSent) で突く。
+func TestBeforeClose_送信中に全部の締めが終わっていたら差し止めない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	quits := recordQuits(app)
+	fast, _ := pipedProc(t)
+	app.procs["fast"] = fast
+	// 送り終えた瞬間、唯一の窓の締めが終わっている — closingPaneExited が
+	// この時点で Quit まで済ませる（全部揃ったのだから閉じてよい）。
+	app.afterExitsSent = func() { app.reapProc("fast", fast, nil) }
+
+	if app.beforeClose(context.Background()) {
+		t.Fatal("beforeClose = true — 待つものが無いのに差し止めた。誰も閉じに来ない")
+	}
+	assertQuit(t, quits, "全部揃ったのに閉じに行っていない")
+	assertNoQuit(t, quits, "閉じる経路が二重に走った — Quit は1回でよい")
+}
+
+// 「待たずに閉じる」はその場で閉じる。後から届く締めの終わりで二度目を呼ばない
+// —— 待つ集合は空にするのではなく捨てる、の観測。
+func TestAbandonBoundary_その場で閉じ後から届く終了で二度閉じない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	quits := recordQuits(app)
+	a, _ := pipedProc(t)
+	b, _ := pipedProc(t)
+	app.procs["a"] = a
+	app.procs["b"] = b
+	if !app.beforeClose(context.Background()) {
+		t.Fatal("beforeClose = false — 締めが立っていない状態から始まっている")
+	}
+
+	app.AbandonBoundary()
+	assertQuit(t, quits, "「待たずに閉じる」がその場で閉じない")
+
+	app.reapProc("a", a, nil)
+	app.reapProc("b", b, nil)
+	assertNoQuit(t, quits, "待たずに閉じた後に届いた終了で、もう一度閉じに行っている")
 }
 
 // 「待たずに閉じる」は猶予を捨てる。ここで chatShutdownGrace を待つと、

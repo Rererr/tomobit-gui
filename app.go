@@ -17,6 +17,15 @@ type App struct {
 	// wailsruntime call, so a test can capture the stream without a running
 	// Wails app.
 	emit func(name string, data ...interface{})
+	// quit closes the app. emit と同じ理由でフィールド: 閉場の待ち合わせ
+	// (closingPaneExited) が「いつ閉じるか」を決める以上、それは Wails を
+	// 起動せずに試験できなければならない。
+	quit func()
+	// afterExitsSent runs right after beforeClose finished sending /exit
+	// (テスト専用の注入点。本番では nil)。「送っている間に全部の締めが終わって
+	// いた」(nothingLeft) は子の終了タイミングとの競走で、この瞬間を外から
+	// 突けないと決定論的に試験できない。
+	afterExitsSent func()
 
 	mu sync.Mutex
 	// procs holds one running `tomobit chat` per pane (ADR-0009 Decision 2:
@@ -34,6 +43,14 @@ type App struct {
 	// 差し止めずに通す — 答え終わった画面からの Quit も、もう一度押された×も
 	// 同じ「もう待たない」の表明として扱う。
 	closingBoundary bool
+	// closingPanes は閉場の締めが走っている窓 (ADR-0009 Decision 4: 生きている窓
+	// すべてに /exit を送り、全部の締めが終わるまで閉じない)。/exit が届いた窓
+	// だけが入り、その窓の chat が終わるたびに抜ける。空になった瞬間が
+	// 「待つものが無い」で、そこで初めてアプリを閉じる（closingPaneExited）。
+	//
+	// nil は「待つ集合が無い」— 閉場中でないか、「待たずに閉じる」で捨てた後。
+	// 空の map（全部揃った直後）とは意味が違うので、同一視しない。
+	closingPanes map[string]bool
 	// abandonBoundary は「待たずに閉じる」と言われたことの記憶。shutdown が
 	// 猶予を飛ばして即座に回収する（AbandonBoundary 参照）。
 	abandonBoundary bool
@@ -74,6 +91,9 @@ func (a *App) startup(ctx context.Context) {
 		a.emit = func(name string, data ...interface{}) {
 			wailsruntime.EventsEmit(a.ctx, name, data...)
 		}
+	}
+	if a.quit == nil {
+		a.quit = func() { wailsruntime.Quit(a.ctx) }
 	}
 	// ロード失敗はゼロ値続行（cmd/tomobit の cfg, cfgErr = config.Load() と同じ
 	// 精神）: gui.json の typo 一つでアプリが起動できなくなるのは避ける。
@@ -396,6 +416,14 @@ func (a *App) beforeClose(_ context.Context) bool {
 	}
 	if len(procs) > 0 && !already {
 		a.closingBoundary = true
+		// 待つ集合は「送る前に、生きている窓ぶんを丸ごと」立てる。送信の最中に
+		// 子が終われば closingPaneExited が走るので、後から埋める形にすると
+		// その瞬間の空集合を「全部終わった」と読み違え、まだ知覚を書いている
+		// 窓を道連れに閉じる。送れなかった窓は下で抜く。
+		a.closingPanes = make(map[string]bool, len(panes))
+		for _, pane := range panes {
+			a.closingPanes[pane] = true
+		}
 	}
 	a.mu.Unlock()
 	if len(procs) == 0 || already {
@@ -413,11 +441,14 @@ func (a *App) beforeClose(_ context.Context) bool {
 	//
 	// 窓が複数あるなら、締めは窓の数だけ立つ (ADR-0009 Decision 4): 全部へ /exit を
 	// 送り、1つでも走り出したなら閉窓を差し止める。1つも送れなかった時だけ、
-	// 差し止める理由が無いのでそのまま閉じる。
+	// 差し止める理由が無いのでそのまま閉じる。実際に閉じるのは全部の締めが
+	// 終わった時で、その待ち合わせは closingPanes が引き受ける。
 	sent := 0
+	unreached := make([]string, 0, len(procs))
 	for i, p := range procs {
 		if err := p.writeWithin("/exit\n", beforeCloseWriteGrace); err != nil {
 			fmt.Fprintf(os.Stderr, "tomobit-gui: 閉窓時の /exit 送信に失敗 (%s): %v\n", panes[i], err)
+			unreached = append(unreached, panes[i])
 			continue
 		}
 		sent++
@@ -425,18 +456,77 @@ func (a *App) beforeClose(_ context.Context) bool {
 	if sent == 0 {
 		a.mu.Lock()
 		a.closingBoundary = false
+		a.closingPanes = nil
 		a.mu.Unlock()
+		return false
+	}
+	if a.afterExitsSent != nil {
+		a.afterExitsSent()
+	}
+	a.mu.Lock()
+	// 届かなかった窓の締めは走っていない。待つ集合に残すと、答え終わった窓が
+	// 全部揃っても最後の1つが永遠に来ず、閉じない窓になる。
+	for _, pane := range unreached {
+		delete(a.closingPanes, pane)
+	}
+	nothingLeft := len(a.closingPanes) == 0
+	a.mu.Unlock()
+	// 送っている間に全部終わっていたなら待つものはもう無い。ここで差し止めると
+	// 誰も閉じに来ず、×をもう一度押させることになる。
+	if nothingLeft {
 		return false
 	}
 	a.emitEvent(eventBoundaryClosing)
 	return true
 }
 
-// QuitNow closes the window for real — called by the screen when the boundary
-// is done (chat:exit が届いた＝待つものが無い)。beforeClose の差し止めは既に
-// 降りている（closingBoundary が立っている）ので、そのまま閉じる。
-func (a *App) QuitNow() {
-	wailsruntime.Quit(a.ctx)
+// closingPaneExited は閉場中の窓が1つ締め終わったことの記帳。最後の1つが終わって
+// 初めてアプリを閉じる (ADR-0009 Decision 4: 全部の締めが終わるまで閉じない)。
+//
+// 最初に終わった窓で閉じてはいけない。締めは窓の数だけ並走していて、遅い窓は
+// まだ知覚を書いている — そこで閉じれば、その窓のセッションは task.finished を
+// 記帳できないまま消える。ADR-0005 が閉窓のたびに失われるのを直した信号が、
+// 窓を増やした分だけまた失われることになる。
+//
+// 待ち合わせを Go に置くのは、画面には自分の窓しか見えないため: 窓ごとに独立した
+// フックが「自分の締めが終わった」を知っても、他の窓がまだ答えている最中かどうかは
+// そこからは判らない。集合を持っているのは /exit を送った側だけである。
+func (a *App) closingPaneExited(pane string) {
+	a.mu.Lock()
+	// stopping は既に窓が閉じた後の回収。closingPanes == nil は待つ集合そのものが
+	// 無い（閉場中でないか、「待たずに閉じる」で捨てた後）— どちらも決める余地が
+	// 無い。nil を空集合と同一視すると、捨てた後の exit で二度目の Quit を呼ぶ。
+	if a.stopping || !a.closingBoundary || a.closingPanes == nil {
+		a.mu.Unlock()
+		return
+	}
+	delete(a.closingPanes, pane)
+	last := len(a.closingPanes) == 0
+	if last {
+		// 最後の1つを数えたら集合ごと捨てる（AbandonBoundary と同じ作法）。
+		// quit が同期でプロセスを終えると信じて空 map を残すと、終わり切る前に
+		// 別経路の exit が届いた場合に len==0 がもう一度真になり、二度目の
+		// Quit を呼ぶ。
+		a.closingPanes = nil
+	}
+	a.mu.Unlock()
+	if !last {
+		return
+	}
+	// a.mu の外で呼ぶ: Quit は OnBeforeClose を呼び戻し、その中で同じ mutex を取る。
+	a.quitApp()
+}
+
+// quitApp closes the app through the injected quit (see the quit field).
+// 未配線（startup 前・テスト）では黙る — emitEvent と同じ姿勢。
+func (a *App) quitApp() {
+	a.mu.Lock()
+	quit := a.quit
+	a.mu.Unlock()
+	if quit == nil {
+		return
+	}
+	quit()
 }
 
 // AbandonBoundary is 「待たずに閉じる」(ADR-0005 Decision 3): the person
@@ -450,8 +540,12 @@ func (a *App) QuitNow() {
 func (a *App) AbandonBoundary() {
 	a.mu.Lock()
 	a.abandonBoundary = true
+	// 待つ集合は空にするのではなく捨てる。「待たずに閉じる」の後も子は死んで
+	// 締めの終わりを届けるので、空の集合を残すとその最後の1つが「全部揃った」の
+	// 経路でもう一度閉じに行く。閉じるのはこの下の1回でよい。
+	a.closingPanes = nil
 	a.mu.Unlock()
-	wailsruntime.Quit(a.ctx)
+	a.quitApp()
 }
 
 // shutdown closes the chat's stdin — the terminal's Ctrl-D: the boundary

@@ -431,20 +431,31 @@ func (a *App) ensureProcLocked(pane string) error {
 	a.reportStartupDiagnostics(pane, missingDirsDiagnostic(missingDirs), sbDiag)
 	go func() {
 		readers.Wait()
-		err := cmd.Wait()
-		close(p.done)
-		a.mu.Lock()
-		if a.procs[pane] == p {
-			delete(a.procs, pane) // 次の SendLine が再起動する
-		}
-		a.mu.Unlock()
-		msg := ""
-		if err != nil {
-			msg = err.Error()
-		}
-		a.emitEvent(eventChatExit, ExitInfo{Pane: pane, Error: msg})
+		a.reapProc(pane, p, cmd.Wait())
 	}()
 	return nil
+}
+
+// reapProc records one chat process ending: 待ち手（shutdown）を起こし、次の
+// SendLine が再起動できるよう在庫から外し、画面へ終了を知らせ、閉場中なら
+// この窓の締めが終わったことを数える。
+//
+// ensureProcLocked の goroutine から切り出してあるのは、子プロセスを立てずに
+// 「窓の chat が終わった」を試験に書けるようにするため — 閉場の待ち合わせ
+// (closingPaneExited) が正しく数えるかは、この経路を通らないと確かめられない。
+func (a *App) reapProc(pane string, p *chatProc, waitErr error) {
+	close(p.done)
+	a.mu.Lock()
+	if a.procs[pane] == p {
+		delete(a.procs, pane) // 次の SendLine が再起動する
+	}
+	a.mu.Unlock()
+	msg := ""
+	if waitErr != nil {
+		msg = waitErr.Error()
+	}
+	a.emitEvent(eventChatExit, ExitInfo{Pane: pane, Error: msg})
+	a.closingPaneExited(pane)
 }
 
 // pumpStream relays one pipe to the frontend in arrival-order chunks, cut at
