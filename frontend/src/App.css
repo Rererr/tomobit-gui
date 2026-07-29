@@ -524,12 +524,25 @@
   gap: 16px;
 }
 
+/* .chat-log と「最新へ」ボタンを包む箱 (ChatPane.tsx参照)。ボタンをここの
+   中で absolute 配置することで、作業バー・入力欄の高さを知らずに済む —
+   以前はボタンの bottom を固定pxで決め打ちしており、作業バー (ADR-0004)
+   の行数が増えるたびにチップへ重なっていた（実測: read_dirs 2件でチップの
+   ×が完全に隠れる）。 */
+.chat-log-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 追従中でない時だけ現れる「最新へ」ボタン: 読み返し中にストリームで
-   引き戻されない代わりの復帰経路（chat-input-barの上に浮かせる） */
+   引き戻されない代わりの復帰経路。.chat-log-wrap の下端基準にしてあるので、
+   常にログ可視域の直下（作業バーの手前）に浮く。 */
 .chat-jump-bottom-btn {
   position: absolute;
-  /* 作業バー (ADR-0004) の分だけ底上げ: 入力の器の上に浮かせる高さ */
-  bottom: 136px;
+  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 14px;

@@ -131,21 +131,23 @@ export function ChatPane({
           という意図だが、aria-relevantの解釈はAT側の実装依存でサポートが不均一
           （無視されれば既定の"additions text"にフォールバックしうる）— 保証では
           なく期待。全文の読了はブラウズモードでの読み返しに委ねる。 */}
-      <div className="chat-log" ref={chatLogRef} onScroll={handleLogScroll} role="log" aria-live="polite" aria-relevant="additions">
-        {messages.length === 0 && activity === null ? (
-          <div className="chat-empty-state">Tomoに話しかけてみよう</div>
-        ) : (
-          messages.map((message) => <MessageView key={message.id} message={message} />)
+      <div className="chat-log-wrap">
+        <div className="chat-log" ref={chatLogRef} onScroll={handleLogScroll} role="log" aria-live="polite" aria-relevant="additions">
+          {messages.length === 0 && activity === null ? (
+            <div className="chat-empty-state">Tomoに話しかけてみよう</div>
+          ) : (
+            messages.map((message) => <MessageView key={message.id} message={message} />)
+          )}
+          {/* 進捗が1つも来ないあいだ、動いていることを言う唯一の場所 (ADR-0008)。
+              会話の末尾に置くのは、待っている人の目が既にそこにあるから */}
+          {activity !== null && <ActivityIndicator activity={activity} />}
+        </div>
+        {!stickToBottom && (
+          <button className="chat-jump-bottom-btn" onClick={jumpToBottom}>
+            ↓ 最新へ
+          </button>
         )}
-        {/* 進捗が1つも来ないあいだ、動いていることを言う唯一の場所 (ADR-0008)。
-            会話の末尾に置くのは、待っている人の目が既にそこにあるから */}
-        {activity !== null && <ActivityIndicator activity={activity} />}
       </div>
-      {!stickToBottom && (
-        <button className="chat-jump-bottom-btn" onClick={jumpToBottom}>
-          ↓ 最新へ
-        </button>
-      )}
 
       {workspace}
 
