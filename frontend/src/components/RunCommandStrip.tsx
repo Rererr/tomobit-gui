@@ -54,47 +54,55 @@ export function RunCommandStrip({
         </div>
       )}
 
-      {error !== null && (
-        <div className="md-run-result md-run-result--error">
-          <div className="md-run-result-head">
-            <span>走らせられなかった: {error}</span>
-            <button className="md-run-dismiss-btn" onClick={onDismissResult}>
-              閉じる
-            </button>
+      {/* DOM 上は chat-log (aria-live="polite" aria-relevant="additions") の
+          中だが、あちらが知らせるのは新規ノードの出現だけで、実行済みの
+          ブロック内に後から現れる完了・失敗はその管理に乗らない。ここで
+          別に領域を張る。箱ごと出し入れすると aria-live 属性の付与自体が
+          中身の出現と同時になり、読み上げに乗らないことがあるので、箱は
+          中身の有無に関わらず常時マウントしておく。 */}
+      <div aria-live="polite">
+        {error !== null && (
+          <div className="md-run-result md-run-result--error">
+            <div className="md-run-result-head">
+              <span>走らせられなかった: {error}</span>
+              <button className="md-run-dismiss-btn" onClick={onDismissResult}>
+                閉じる
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {result !== null && (
-        <div
-          className={
-            result.exit_code === 0 && !result.timed_out
-              ? "md-run-result"
-              : "md-run-result md-run-result--failed"
-          }
-        >
-          <div className="md-run-result-head">
-            <span>{runResultLabel(result)}</span>
-            <button className="md-run-dismiss-btn" onClick={onDismissResult}>
-              閉じる
-            </button>
+        {result !== null && (
+          <div
+            className={
+              result.exit_code === 0 && !result.timed_out
+                ? "md-run-result"
+                : "md-run-result md-run-result--failed"
+            }
+          >
+            <div className="md-run-result-head">
+              <span>{runResultLabel(result)}</span>
+              <button className="md-run-dismiss-btn" onClick={onDismissResult}>
+                閉じる
+              </button>
+            </div>
+            {/* 出力が無かったことは、空欄で沈黙せずそう言う */}
+            {runOutputIsEmpty(result) && <p className="md-run-result-empty">出力は無かった</p>}
+            {result.stdout !== "" && <pre className="md-run-result-body">{result.stdout}</pre>}
+            {result.stderr !== "" && (
+              <pre className="md-run-result-body md-run-result-body--stderr">{result.stderr}</pre>
+            )}
+            {/* 黙って切り詰めない (ADR-0007 Decision 4) */}
+            {result.truncated && (
+              <p className="md-run-result-note">出力が長すぎたので、末尾だけ残して切り詰めた</p>
+            )}
+            {/* 残らないことを先に言う。後から探せると思わせない (Decision 5) */}
+            <p className="md-run-result-note">
+              この結果は会話にも台帳にも残らない — 画面を離れると消える
+            </p>
           </div>
-          {/* 出力が無かったことは、空欄で沈黙せずそう言う */}
-          {runOutputIsEmpty(result) && <p className="md-run-result-empty">出力は無かった</p>}
-          {result.stdout !== "" && <pre className="md-run-result-body">{result.stdout}</pre>}
-          {result.stderr !== "" && (
-            <pre className="md-run-result-body md-run-result-body--stderr">{result.stderr}</pre>
-          )}
-          {/* 黙って切り詰めない (ADR-0007 Decision 4) */}
-          {result.truncated && (
-            <p className="md-run-result-note">出力が長すぎたので、末尾だけ残して切り詰めた</p>
-          )}
-          {/* 残らないことを先に言う。後から探せると思わせない (Decision 5) */}
-          <p className="md-run-result-note">
-            この結果は会話にも台帳にも残らない — 画面を離れると消える
-          </p>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }
