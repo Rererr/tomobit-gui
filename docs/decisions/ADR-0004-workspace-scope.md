@@ -10,6 +10,13 @@
   本体 [ADR-0021](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0021-onboarding.md)（配線は経験ではない）,
   本体 [ADR-0043](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0043-auto-by-default.md)（Provider選択）
 
+<!-- 改版:begin — tools/sync-adr-superseded.sh が生成する。手で編集しない -->
+> **改版済み** — この決定の一部は後のADRが置き換えた。範囲は各Decisionの改版注記が持つ。
+>
+> - Decision 1 → [ADR-0009](ADR-0009-four-panes.md)
+> - Decision 2 → [ADR-0009](ADR-0009-four-panes.md)
+<!-- 改版:end -->
+
 ---
 
 ## Context

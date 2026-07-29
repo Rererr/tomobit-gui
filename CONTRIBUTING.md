@@ -9,7 +9,22 @@
 - **CLAは採りません。** [DCO 1.1](https://developercertificate.org/) を使います。
   コミットに `Signed-off-by:` を付けてください（`git commit -s`）
 - コード → [AGPL-3.0-only](LICENSE) / 文書 → [CC BY-SA 4.0](LICENSE-docs)
-- 挙動・設計に関わる変更は、コードより先にADRのドラフトを
+- 挙動・設計に関わる変更は、コードより先にADRのドラフトを出してください
+
+## ADRの書き方
+
+節ラベルと改版マークの規約は本体と共通です
+（[tomobit CONTRIBUTING.md](https://github.com/Rererr/tomobit/blob/main/CONTRIBUTING.md)）。
+要点だけ:
+
+- `## 実装フェーズ（Proposed）` は**起草時に提案した計画**。実際に起きたことは
+  `## 実装の記録（日付）` / `## 追記（日付）` が持ちます。Status が「実装済み」でも
+  計画の節を結果で上書きしないでください
+- 決定を覆すときは、**覆す側**のヘッダに `- 改版: ADR-0004 D1 D2` の1行を書きます。
+  被改版側の冒頭に立つ「改版済み」ブロックは `make docs-sync` が生成します
+  （手で書かない）。`make docs-check` が陳腐化を検出します
+- 本体のADRを改版する場合は、このスクリプトが隣のリポジトリを書き換えられないので
+  宣言は書かず、散文と `関連:` で書きます
 
 ## このリポジトリ固有の原則
 
@@ -31,7 +46,7 @@ GUIは**第三のレンダラ**であって、新しい真実を作りません
 gofmt -l .        # 出力が空であること
 go vet ./...
 go test ./...
-make docs-check   # ADRリンクの参照先が実在すること
+make docs-check   # ADRリンクの参照先が実在すること・改版マークが最新であること
 cd frontend && npm test && npx tsc --noEmit
 ```
 

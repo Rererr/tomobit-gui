@@ -6,6 +6,7 @@
   も同日 Phase 1〜3 実装済み。Phase 4 は3項目のうち1つ〈知覚の逐次化〉だけが
   実装対象で、残り2つは本体の論点だと判明した — 下記「実装の記録」）
 - Date: 2026-07-26
+- 改版: ADR-0004 D1 D2, ADR-0005 D1 D3
 - 関連: [ADR-0001](ADR-0001-gui-architecture.md)（Decision 1: 新しい真実を作らない /
   Decision 2: `tomobit chat` 子プロセス / Decision 4 追記: 反映境界 = セッション境界 = プロセス境界）,
   [ADR-0004](ADR-0004-workspace-scope.md)（働く場所 — 本ADRが「窓ごと」へ改訂）,
@@ -16,6 +17,12 @@
   本体 [ADR-0050](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0050-workspace-isolation-protocol.md)（作業場の隔離 — **本ADRの前提条件**）,
   本体 [ADR-0019](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0019-companionship-is-derived.md)（相棒らしさは台帳のView）,
   本体 [ADR-0028](https://github.com/Rererr/tomobit/blob/main/docs/decisions/ADR-0028-auto-split-parallel.md)（Decision 4: 端末が1本という物理）
+
+<!-- 改版:begin — tools/sync-adr-superseded.sh が生成する。手で編集しない -->
+> **改版済み** — この決定の一部は後のADRが置き換えた。範囲は各Decisionの改版注記が持つ。
+>
+> - Decision 4 → [ADR-0012](ADR-0012-one-sheet-for-app-closing.md)
+<!-- 改版:end -->
 
 ---
 
