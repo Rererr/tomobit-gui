@@ -19,14 +19,18 @@ func main() {
 
 	app := NewApp()
 
+	// 1窓ぶんの下限。窓は復元されるまで何個か判らないので、ここでは一番緩い値を
+	// 置き、startup が保存された並びで引き直す — 以後は AddPane / ClosePane が
+	// 追随する。値の正本は paneMinSize（手写しにすると、あちらを変えた日に
+	// ここだけ古い値で起動する）。
+	minW, minH := paneMinSize(1)
+
 	err := wails.Run(&options.App{
-		Title:  "Tomobit",
-		Width:  1100,
-		Height: 760,
-		// 固定260pxサイドバー + チャット面の最小実用幅。これ未満は設定の
-		// textarea が1文字/行まで潰れる（実機レビューで確認された破綻点）。
-		MinWidth:  640,
-		MinHeight: 480,
+		Title:     "Tomobit",
+		Width:     1100,
+		Height:    760,
+		MinWidth:  minW,
+		MinHeight: minH,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

@@ -21,6 +21,9 @@ type App struct {
 	// (closingPaneExited) が「いつ閉じるか」を決める以上、それは Wails を
 	// 起動せずに試験できなければならない。
 	quit func()
+	// setMinSize applies the window's floor. 窓の並びで変わる (paneMinSize) ので、
+	// これも起動時の固定値ではなく注入点として持つ。
+	setMinSize func(width, height int)
 	// afterExitsSent runs right after beforeClose finished sending /exit
 	// (テスト専用の注入点。本番では nil)。「送っている間に全部の締めが終わって
 	// いた」(nothingLeft) は子の終了タイミングとの競走で、この瞬間を外から
@@ -95,15 +98,26 @@ func (a *App) startup(ctx context.Context) {
 	if a.quit == nil {
 		a.quit = func() { wailsruntime.Quit(a.ctx) }
 	}
+	if a.setMinSize == nil {
+		a.setMinSize = func(width, height int) {
+			wailsruntime.WindowSetMinSize(a.ctx, width, height)
+		}
+	}
 	// ロード失敗はゼロ値続行（cmd/tomobit の cfg, cfgErr = config.Load() と同じ
 	// 精神）: gui.json の typo 一つでアプリが起動できなくなるのは避ける。
-	if c, err := loadGUIConfig(); err != nil {
+	c, err := loadGUIConfig()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "tomobit-gui: gui.json の読み込みに失敗:", err)
 	} else {
 		a.mu.Lock()
 		a.guiConfig = c
 		a.mu.Unlock()
 	}
+	// 窓の並びは復元される (ADR-0009 Decision 3) のに、main.go が窓に渡す下限は
+	// 1窓ぶんしかない。2列で終えた機械が2列で開き直った瞬間に潰れているのでは
+	// 意味が無いので、読み込んだ並びで引き直す。読めなかった時のゼロ値は1窓
+	// (PaneList) なので、既定の下限へ落ちる。
+	a.applyMinSize(len(c.PaneList()))
 }
 
 // GetGUIConfig returns the current speaking-style config as saved on disk.
@@ -188,6 +202,49 @@ func (a *App) SetWorkspace(pane, workingDir string, readDirs []string) (Workspac
 	return WorkspaceUpdate{Config: c}, nil
 }
 
+// paneMinSize は窓の並びに対する画面の下限。格子は窓数で決まる (ADR-0009
+// Decision 2 / frontend panes.ts paneGridClass): 1窓=1面、2窓=2列、3〜4窓=2列2行。
+//
+// 1窓ぶんの 640x480 のまま2列に割ると、入力欄の placeholder が1文字ずつ縦に
+// 折れるところまで潰れる（実測）。下限は「窓が何個並ぶか」の関数であって、
+// アプリ起動時に1度決める定数ではない。
+//
+// 960 と 620 は暫定値:
+//   - 縦620には実測根拠がある — 1100x620 では4窓すべての入力欄と送信ボタンが
+//     操作可能、縦500では作業バーが2行になった窓の入力欄が clip されて押せない
+//   - 横の破綻点そのものは未計測。640で2列が壊れることだけが分かっている。
+//     実機で詰めてから確定する
+//
+// 下限を上げた時に窓自体が広がるかは、macOS では Wails が引き受ける
+// (WailsContext.m adjustWindowSize が現在のフレームを新しい下限まで押し戻す)。
+// 他プラットフォームと、実際の見た目が意図どおりかは要実機確認。
+func paneMinSize(panes int) (width, height int) {
+	switch {
+	case panes <= 1:
+		// 固定260pxサイドバー + チャット面の最小実用幅（1窓時代の実測。これ未満は
+		// 設定の textarea が1文字/行まで潰れる）。
+		return 640, 480
+	case panes == 2:
+		return 960, 480
+	default:
+		return 960, 620
+	}
+}
+
+// applyMinSize moves the window's floor to fit panes windows. 窓が増えた時
+// (AddPane)・減った時 (ClosePane)・保存された並びで開き直した時 (startup) に
+// 呼ぶ。Wails 未起動（テスト・startup 前）では setMinSize が nil なので黙る。
+func (a *App) applyMinSize(panes int) {
+	a.mu.Lock()
+	set := a.setMinSize
+	a.mu.Unlock()
+	if set == nil {
+		return
+	}
+	width, height := paneMinSize(panes)
+	set(width, height)
+}
+
 // AddPane opens one more window (ADR-0009 Decision 2), up to MaxPanes, and
 // returns the new layout. プロセスは起動しない — 空の窓が Provider の枠も
 // quota も握らないのは遅延起動の副産物で、窓が増えてもそこは変わらない。
@@ -211,6 +268,7 @@ func (a *App) AddPane() ([]PaneConfig, error) {
 	a.mu.Lock()
 	a.guiConfig = c
 	a.mu.Unlock()
+	a.applyMinSize(len(panes))
 	return panes, nil
 }
 
@@ -243,6 +301,9 @@ func (a *App) ClosePane(pane string) (bool, error) {
 	a.guiConfig = c
 	p := a.procForLocked(pane)
 	a.mu.Unlock()
+	// 下限は先に緩める: 画面が窓を畳むのは chat:exit の後だが、下限を下げても
+	// 今の窓は狭くならない（広げる側と違って、遅れて困る人が居ない）。
+	a.applyMinSize(len(kept))
 	if p == nil {
 		return false, nil
 	}

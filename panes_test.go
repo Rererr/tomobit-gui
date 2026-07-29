@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -130,6 +131,83 @@ func TestClosePaneKeepsTheLastWindow(t *testing.T) {
 	}
 	if len(panes) != 1 || panes[0].ID != mainPane {
 		t.Errorf("閉じた窓は残らない: %+v", panes)
+	}
+}
+
+// 画面の下限は窓の数で決まる。1窓ぶんの 640x480 のまま2列に割ると入力欄が
+// 潰れ、2行に割ると作業バーが2行になった窓の入力欄が clip される（実測）。
+func TestPaneMinSizeFollowsTheGrid(t *testing.T) {
+	for _, tc := range []struct {
+		panes         int
+		width, height int
+		why           string
+	}{
+		{1, 640, 480, "1窓の下限は据え置き（サイドバー+チャット面の実用幅）"},
+		{2, 960, 480, "2列は横に足りない"},
+		{3, 960, 620, "2行は縦に足りない"},
+		{4, 960, 620, "3窓と4窓は同じ格子"},
+	} {
+		w, h := paneMinSize(tc.panes)
+		if w != tc.width || h != tc.height {
+			t.Errorf("paneMinSize(%d) = %dx%d, want %dx%d — %s", tc.panes, w, h, tc.width, tc.height, tc.why)
+		}
+	}
+}
+
+// 窓を増やせば下限も上がり、閉じれば戻る。設定だけ書き換えて画面の下限を
+// 据え置くと、増えた窓がその場で潰れる。
+func TestAddAndClosePaneMoveTheWindowFloor(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := NewApp()
+	type size struct{ width, height int }
+	var applied []size
+	a.setMinSize = func(width, height int) { applied = append(applied, size{width, height}) }
+	last := func() size {
+		t.Helper()
+		if len(applied) == 0 {
+			t.Fatal("窓の並びが変わったのに下限を引き直していない")
+		}
+		return applied[len(applied)-1]
+	}
+
+	if _, err := a.AddPane(); err != nil {
+		t.Fatal(err)
+	}
+	if got := last(); got != (size{960, 480}) {
+		t.Errorf("2窓の下限 = %+v, want 960x480", got)
+	}
+	if _, err := a.AddPane(); err != nil {
+		t.Fatal(err)
+	}
+	if got := last(); got != (size{960, 620}) {
+		t.Errorf("3窓の下限 = %+v, want 960x620", got)
+	}
+	if _, err := a.ClosePane("pane-3"); err != nil {
+		t.Fatal(err)
+	}
+	if got := last(); got != (size{960, 480}) {
+		t.Errorf("2窓へ戻った後の下限 = %+v, want 960x480", got)
+	}
+}
+
+// 窓の並びは次回起動で復元される (ADR-0009 Decision 3)。下限だけ1窓ぶんのまま
+// 開くと、復元された2列がその瞬間から潰れている。
+func TestStartupAppliesTheSavedLayoutsFloor(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := NewApp()
+	a.emit = func(string, ...interface{}) {}
+	a.quit = func() {}
+	var applied [2]int
+	a.setMinSize = func(width, height int) { applied = [2]int{width, height} }
+	if _, err := a.AddPane(); err != nil {
+		t.Fatal(err)
+	}
+
+	applied = [2]int{}
+	a.startup(context.Background())
+
+	if applied != [2]int{960, 480} {
+		t.Errorf("2窓で保存された gui.json から起動した下限 = %v, want [960 480]", applied)
 	}
 }
 
