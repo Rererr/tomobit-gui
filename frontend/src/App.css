@@ -1901,9 +1901,17 @@
 
 /* 閉じる前の締め（ADR-0005）: 窓の×から閉じるまでの間だけ立つモーダル。
    背後のチャット面は生きたまま（締めの行はログにも積まれる）で、この層は
-   「今答えるべき問い」だけを前に出す */
+   「今答えるべき問い」だけを前に出す。
+   position は fixed ではなく absolute にしてある — ADR-0009 で会話面が
+   複数窓に分割された後もここだけ fixed のまま残っており、1窓の締めが
+   画面全体（他の窓・サイドバー）まで暗転させ、他窓を操作不能にしていた
+   （ChatPaneHost 側の「窓の中に出るので他の窓は動き続ける」という説明と
+   矛盾）。ClosingDialog は .chat-pane-host、NewChatConfirmDialog は
+   .chat-pane の直下にあり、どちらも position:relative の窓なので、
+   absolute にすれば inset:0 は窓いっぱいに収まる（.permission-backdrop と
+   同じ形）。 */
 .closing-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
@@ -2120,7 +2128,9 @@
    締めのダイアログと同じ「窓の中に出る」形 (ADR-0009 Decision 4)。
    警告色にしない: これは事故の通知ではなく、Tomo が仕事を進めるために要る
    ものを訊いている場面である。ただし ADR-0007 の作法どおり、何を許すのかは
-   押す前に見えていなければならない。 */
+   押す前に見えていなければならない。
+   z-index は closing-backdrop（10）より高くしてある: 締めと権限の問いが
+   同一窓で重なった場合、Tomo が仕事を進めるための権限の問いを先に通す。 */
 .permission-backdrop {
   position: absolute;
   inset: 0;
