@@ -15,11 +15,8 @@
   --color-bg-sidebar: #171614;
   --color-bg-well: #100f0e; /* 最も凹んだ面: コード塊・ツール出力本文・強さバーの溝 */
   --color-bg-surface: #242220; /* カード・入力欄 */
-  --color-bg-raised: #2b2926; /* ホバー面と共通のトーン。Tomo吹き出し背景・main-header/chat-input-barの罫にも使う */
+  --color-bg-raised: #2b2926; /* ホバー面と共通のトーン。main-header/chat-input-barの罫にも使う */
   --color-bg-active: #38352f; /* 選択中のnav/セッション項目 */
-  /* 自分の発言だけは寒色寄りに残す: 面の色相を全部揃えた結果、Youの吹き出しが
-     Tomoの吹き出しと明度差だけで区別される状態になった。色相を1つ分ずらす。 */
-  --color-bg-user-bubble: #2e3138;
   --color-bg-note-await: #2a2318; /* 境界のFeedback質問を強調する下地 */
 
   /* border は「塗りを持たない部品の唯一の輪郭」になる（.add-pane-btn ら
@@ -524,6 +521,39 @@
   gap: 16px;
 }
 
+/* 入力欄までの飛び石 (WCAG 2.4.1 Bypass Blocks / ChatPane.tsx 参照)。
+   普段は読み上げにだけ在る（.sr-only と同じ形）。フォーカスが来た時だけ
+   実体を持つ —— 見えないまま「飛べる」と言うと、目で使う人には存在しない。 */
+.chat-skip-to-input {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-skip-to-input:focus {
+  width: auto;
+  height: auto;
+  padding: 6px 12px;
+  overflow: visible;
+  clip: auto;
+  border-color: var(--color-border);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 /* .chat-log と「最新へ」ボタンを包む箱 (ChatPane.tsx参照)。ボタンをここの
    中で absolute 配置することで、作業バー・入力欄の高さを知らずに済む —
    以前はボタンの bottom を固定pxで決め打ちしており、作業バー (ADR-0004)
@@ -618,43 +648,34 @@
   font-size: 16px;
 }
 
+/* 会話は寄せではなく名前で話者を言う左寄せ1列 (ADR-0014 Decision 1)。以前は
+   自分の発言を右寄せの吹き出しに、Tomo側の発言を灰色のカードに収めていたが、
+   Tomo側の中身は発言だけでなく表・作業ログ・判断の監査表まで乗るため、幅の
+   違う2つの器を保つ式（`max-width: min(max(640px, 90%), 100%)`）が無理を
+   重ねていた。器（背景・角丸・padding・寄せ）を外し、話者は名前の行
+   （chat-message-role）が言う。 */
 .chat-message {
-  max-width: 640px;
-  /* フレックスアイテムの既定min-width:autoは、改行機会の無い長いトークン
-     （URL・長いテーブルセル等）がある時にmax-widthを無視して広がる原因になる
-     （実測: GFMテーブルにaaa...の長いセルを入れるとウィンドウごと横スクロール
-     可能になる不具合を確認）。0にしてmax-widthを実効させる */
+  /* フレックスアイテムの既定 min-width:auto は、改行機会の無い長いトークン
+     （URL・長いテーブルセル等）がある時に中身の最小内容サイズまで広がろうと
+     し、.chat-log を横スクロールさせる（実測: GFMテーブルに長いセルを入れる
+     とウィンドウごと横スクロール可能になる不具合を確認——器の幅を単純化した
+     今も、中身側のこの性質は変わらない）。0にして、内容を折り返せる幅まで
+     縮められるようにする。 */
   min-width: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
   line-height: 1.5;
 }
 
-.chat-message--user {
-  align-self: flex-end;
-  background-color: var(--color-bg-user-bubble);
+/* サブタスクの左帯 (ADR-0011 の会話構造そのもの、器を外した後も残す)。
+   会話そのもののターンとは見分けがつくが、別の生き物には見せない。 */
+.chat-message--subtask {
+  border-left: 2px solid var(--color-border-input);
+  padding-left: 10px;
 }
 
-/* Tomo 側だけ器を広く取る: 中身が本文だけではなく、作業ログ・ツール出力・
-   判断の監査表まで入る側なので、640pxで折り返すと表が縦に潰れて読めない。
-   右に1割だけ余白を残し、残りは本文へ渡す（自分の発言は右寄せの短文なので
-   640pxのまま — 両側が器いっぱいだと、どちらの声かが寄せで読めなくなる）。
-   max() の下限に元の640pxを置くのは、狭い窓や2x2の格子 (ADR-0009) で
-   90%だけにすると今より狭くなるため。
-   ただしその640px下限は2列分割時のログ幅（実測 約570px）より広く、下限が
-   勝つとカードごと窓をはみ出して .chat-log に横スクロールが出ていた
-   （2026-07-29 回帰）。min(...,100%) で親幅を天井にして、はみ出しだけ
-   止める（640px を確保したい意図はそのまま残す）。 */
-.chat-message--tomo {
-  align-self: flex-start;
-  max-width: min(max(640px, 90%), 100%);
-  background-color: var(--color-bg-raised);
-}
-
-/* 役割ラベル。今は Tomo 側にしか出ない —— 自分の発言は右寄せと吹き出しの色で
-   誰のものか分かるので、ラベルは sr-only にした（ChatMessageView 参照）。
-   Tomo 側は左寄せの吹き出しが1種類しかなく、provider チップと並ぶ行の頭でも
-   あるので残している。 */
+/* 役割ラベル。You/Tomo どちらも同じ見え方にする——寄せと背景色が担っていた
+   「誰の声か」を名前が引き継ぐ (ADR-0014 Decision 1)。連続する同じ話者では
+   呼び出し側 (speakerName.sameSpeakerAsPrevious) がこのクラスの代わりに
+   sr-only を渡す: 目からは省くが読み上げには残す。 */
 .chat-message-role {
   display: block;
   font-size: 12px;
@@ -662,7 +683,8 @@
   margin-bottom: 4px;
 }
 
-/* ターンの役割ラベル・providerチップを横に並べる行 */
+/* ターンの役割ラベル・サブタスクチップを横に並べる行。provider名は常時
+   表示をやめ、メタ1行(chat-turn-meta)へ合流した (ADR-0014 Decision 3)。 */
 .chat-turn-header {
   display: flex;
   align-items: center;
@@ -672,19 +694,6 @@
 
 .chat-turn-header .chat-message-role {
   margin-bottom: 0;
-}
-
-/* provider名: 誰が答えたかの恒常表示（本体turn.startedから既に届いている値 —
-   表示コストはゼロなので常に出す）。border-colorはtext-muted-aa相当まで
-   持ち上げる — border-subtleは.chat-message--tomoの地(bg-raised)との実測が
-   1.09:1しかなく、チップの境界として見えていなかった。非text用途でも
-   text系トークンを流用する（実測でAAを満たす明度をそのまま線に使う）。 */
-.chat-turn-provider-chip {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--color-text-muted-aa);
 }
 
 /* 分割の子の枠 (本体 ADR-0032 の sub / GUI ADR-0011)。並走すると同時に複数
@@ -700,13 +709,9 @@
   border: 1px solid var(--color-border-input);
 }
 
-.chat-message--subtask {
-  border-left: 2px solid var(--color-border-input);
-  padding-left: 10px;
-}
-
 /* 「なぜこのProviderか」開示(本体 ADR-0040 Decision 2: 既定は畳む)。
-   chat-turn-tool-resultと同じネイティブdetails/summary方式。 */
+   chat-turn-tool-resultと同じネイティブdetails/summary方式。常時表示の
+   トグルではなく chat-turn-meta の中身として開く (ADR-0014 Decision 3)。 */
 .chat-turn-decided {
   font-size: 12px;
   margin-bottom: 8px;
@@ -720,6 +725,13 @@
 
 .chat-turn-decided > summary:hover {
   color: var(--color-text-secondary);
+}
+
+/* chat-turn-meta-blocks は子の間を gap で空けるので、末尾に来る decided
+   自身の margin-bottom は二重の余白になる（.chat-turn-decided は元々
+   gap を持たない場所に単独で置かれる前提の余白だった）。 */
+.chat-turn-meta-blocks > .chat-turn-decided {
+  margin-bottom: 0;
 }
 
 .chat-decided-disclosure {
@@ -805,6 +817,22 @@
   overflow-wrap: break-word;
 }
 
+/* 本文の1行だけは読める長さで止める (ADR-0014 Decision 1 の追加規則)。
+   器を外したのは幅の制約を捨てたかったからではなく、作業ログ・表・監査表まで
+   1つの吹き出しに詰める無理をやめたかったから——**本文の行長は別の問題**である。
+   実測: 1920px幅・1窓で本文が1612px、16pxの和文で約101文字/行になっていた
+   （旧 .chat-message--tomo の 90% 指定でも1451px≒90文字で、器を外す前から
+   長すぎた。今回それを引き継がない）。em を単位にするのは、和文では 1em が
+   ほぼ1文字だから — 44em ≒ 和文44文字 / 欧文88文字。
+   **狭い窓では効かない**: 3窓の格子（ADR-0009）では1窓が44emに届かないので、
+   この上限は「広い窓で1窓のときだけ」働く。
+   表と コードブロックは上限の外に置く: あれは行として読むものではなく、
+   横に広い方が読める（表は自前で overflow-x: auto を持っている）。 */
+.chat-message-text,
+.chat-turn-text .md-content > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
+  max-width: 44em;
+}
+
 .chat-message--system {
   align-self: center;
   color: var(--color-text-muted-aa);
@@ -823,7 +851,7 @@
 }
 
 /* Tomoの発言のMarkdown描画 (react-markdown + remark-gfm)。要素間の既定marginは
-   吹き出し内で詰めて統一する */
+   本文の中で詰めて統一する */
 .md-content > :first-child {
   margin-top: 0;
 }
@@ -1009,7 +1037,7 @@
   background-color: var(--color-bg-raised);
 }
 
-/* 実行の結果 (ADR-0007 Decision 5)。Tomo の吹き出しの中に置かれるが、
+/* 実行の結果 (ADR-0007 Decision 5)。Tomo のターンの中に置かれるが、
    Tomo の発話ではない — 左の罫と面で「差し込まれたもの」として区別する */
 .md-run-result {
   margin-top: 6px;
@@ -1160,32 +1188,170 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* 終わったターンの作業ログ（turnFold.ts）。走行中は tool 行がそのまま並び、
-   turn.finished が来た瞬間にこの1行へ畳まれる。要約行はツール行と同じ
-   モノスペースの脇道トーンに揃える — 畳んだ結果が本文より目立つと、
-   「答えを前に出す」という畳む目的そのものが裏返る。 */
-.chat-turn-work > summary {
-  cursor: pointer;
-  color: var(--color-text-muted);
+/* ターンのメタ1行 (ADR-0014 Decision 3): 作業件数・provider・所要時間・
+   コストを1本へ合流させる。旧 chat-turn-provider-chip（常時チップ）・
+   chat-turn-decided（常時トグル）・chat-turn-footer（帳簿だけの行）が答えの
+   周りにそれぞれ出ていたのをやめ、答えの隣は1行だけにする——「機械の帳簿」の
+   トーンを継いで控えめにミュートする（旧 chat-turn-footer の色）。開ける
+   中身が無い時は details ではない bare な div になるが、行としては同じ
+   見え方にする。 */
+.chat-turn-meta {
+  margin-top: 6px;
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  list-style-position: outside;
+  color: var(--color-text-muted-aa);
 }
 
-.chat-turn-work > summary:hover {
+/* 開閉できるかどうかで行の左端を動かさない。開ける中身が無いターン（作業0件で
+   decided も無い経路）は details ではない bare な div になり、UA の三角マーカー
+   ぶんだけ文字の開始位置がずれる（Chromium 実測: 24px と 37px）——本文の左端は
+   揃っているのにメタ行だけがターンごとにガタつく。
+   Why not bare 側に同じ幅の padding を足すか: マーカーの幅は engine 依存で
+   （macOS の実機は WKWebView、検証は Chromium）、片方で揃えると他方でずれる。
+   マーカーごと自前のものへ置き換えて幅を固定し、bare 側は同じ幅を空ける。 */
+.chat-turn-meta {
+  --meta-marker-width: 13px;
+}
+
+.chat-turn-meta > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.chat-turn-meta > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-turn-meta > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: var(--meta-marker-width);
+}
+
+.chat-turn-meta[open] > summary::before {
+  content: "▾";
+}
+
+/* 三角の場所だけ空ける（機能しない矢印は出さない — ChatMessageView 参照）。 */
+.chat-turn-meta--bare::before {
+  content: "";
+  display: inline-block;
+  width: var(--meta-marker-width);
+}
+
+.chat-turn-meta > summary:hover {
   color: var(--color-text-secondary);
 }
 
 /* 開いた中身は、畳む前と同じ間隔で積む（chat-turn-blocks と同じ規律）。
    左の罫は「ここは畳まれていた領域だ」という境界で、開いた後も本文と
    作業ログの区別が消えないようにする */
-.chat-turn-work-blocks {
+.chat-turn-meta-blocks {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 6px;
   padding-left: 10px;
   border-left: 2px solid var(--color-border-subtle);
+}
+
+/* 返答の隣に置く反応 (ADR-0014 Decision 4)。メタ1行の下、答えの一番近くに置く。
+   行そのものは常に場所を取る: ホバーで高さが生えると、ログの上をマウスが通る
+   たびに下の全部がずれる（読んでいる最中に文字が動く）。 */
+.chat-turn-reactions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  min-height: 22px;
+}
+
+/* 押せる口も、置かれた印も、同じ箱にする（片方だけ inline-flex にすると
+   記号の縦位置が2種類になる）。color を明示するのは button が UA 既定の
+   buttontext を使うためで、知らない語のラベル文字（記号が無い語は本体の文を
+   そのまま出す）が地に沈むのを防ぐ。 */
+.chat-reaction-btn,
+.chat-reaction-placed {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Slack の作法: ホバーで現れ、置いてあれば常に見える。
+   visibility/display で消さないのは、**キーボードで辿り着けなくなる**ため —
+   opacity:0 の要素はフォーカスを受けられるので、:focus-within で現れる。 */
+.chat-reaction-btn {
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* 会話の最後のターンだけは、ホバー無しでも口を出す。
+   ホバーでしか現れないものは**一度も気づかれない可能性がある**（ADR-0014 の
+   実装時ノブに所有者自身が書いた懸念で、実測でも非ホバー時は周辺のダーク背景と
+   1ピクセルも差が出なかった）。気づかれなければ「締めが軽くなる」という設計意図
+   ごと発火しない。最後のターンに絞るのは、直前に読み終えたターン＝押したくなる
+   瞬間だからで、新しいターンが来れば自動で静かに戻る。
+   行は min-height で高さを予約済みなので、出てもレイアウトは動かない。
+
+   Why not `:last-child`: 会話ログの末尾には、ターンの後に境界の器官の note・
+   GUI の system 注記・stderr・走行中の帯が来うる。ターンの後に note が1つ
+   届くだけで DOM 上の最後の子要素が入れ替わり、直前まで見えていた反応ボタンが
+   消える（実機で再現済み）。判定は isLatestTurn（reaction.ts）が持ち、
+   真のときだけ呼び出し側が .chat-turn-reactions--latest を付ける。 */
+.chat-turn-reactions--latest .chat-reaction-btn,
+.chat-message:hover .chat-reaction-btn,
+.chat-turn-reactions:focus-within .chat-reaction-btn,
+.chat-reaction-btn--active,
+.chat-reaction-btn--waiting {
+  opacity: 1;
+}
+
+.chat-reaction-btn:hover {
+  background-color: var(--color-bg-raised);
+}
+
+/* 置かれた印は、押せる口が消えた後（区切りの向こう側・過去セッション）も
+   同じ姿で残る。輪郭が「置いてある」ことを言う唯一の視覚情報なので、
+   罫は 1.4.11 の 3:1 を満たす --color-border を使う。 */
+.chat-reaction-btn--active,
+.chat-reaction-placed {
+  background-color: var(--color-bg-raised);
+  border-color: var(--color-border);
+}
+
+/* 送信待ち: 「送った」と「記帳された」を同じ見え方にしない (ADR-0014 Decision 4)。
+   確定は本体の reaction が返ってからで、それまでは**破線の輪郭**（置かれた印は
+   実線＋塗り）。色だけに頼らないよう、aria-label / title 側にも「（送信待ち）」。
+   Why not filter: opacity(...) で薄くするか: filter は**要素全体**を減衰させる
+   ので、輪郭の色まで一緒に薄まる —— border(#736c62) を地へ 55% で混ぜた実効色は
+   #4b4741 で 1.89:1、WCAG 1.4.11 の 3:1 を大きく割る（contrast.ts の式で実測）。
+   しかも filter の結果はテストで捕まえられない。輪郭と文字を別々のプロパティで
+   書けば、使う色の組み合わせが contrast.test.ts の表に載って機械が守る。
+   （opacity を使わないのは元の理由のまま: あれは「ホバーで現れる」側の道具で、
+   同じプロパティを2つの意味で使うと押した直後に待ちの姿が消える。） */
+.chat-reaction-btn--waiting {
+  border-color: var(--color-border);
+  border-style: dashed;
+  color: var(--color-text-muted-aa);
+}
+
+/* フォーカスの輪郭。Chromium 既定のリング rgb(0,95,204) は地に対して 2.91:1 で、
+   このプロジェクトが他の入力系に当てている --color-focus (6.76:1) を下回る。
+   ここに並ぶのは「既定では輪郭も塗りも持たない」部品ばかりで、フォーカスが
+   どこに居るかを言うのはこの輪郭だけである。 */
+.chat-reaction-btn:focus-visible,
+.chat-turn-meta > summary:focus-visible,
+.chat-turn-decided > summary:focus-visible,
+.chat-turn-tool-result > summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 /* ツール出力: 既定折り畳み（本体は無加工・上限なしで流す — 表示予算は消費者側） */
@@ -1221,20 +1387,19 @@
   overflow-wrap: break-word;
 }
 
-/* turn.finished のフッタ: 機械の帳簿（所要時間・コスト）。控えめにミュート */
-.chat-turn-footer {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--color-text-muted-aa);
-}
-
-/* 器官の発話・注記（ターン外）: Tomoの吹き出しでもGUIのsystem注記でもない第三の声。
-   左寄せ・左罫で「会話の脇から差し込まれた声」として区別する */
+/* 器官の発話・注記（ターン外）: Tomoの発言でもGUIのsystem注記でもない第三の声。
+   左寄せ・左罫で「会話の脇から差し込まれた声」として区別する。
+   罫の色と塗りで Markdown の引用 (.md-content blockquote) と分ける: あちらも
+   「左罫 + text-quiet」で、同じ視覚文法のままだと**Tomo が引用した文と、
+   Tomo ではない声が見分けられない** —— ADR-0014 が分けようとしているものが
+   混ざる。色相（鋼青 vs 暖灰）だけでなく塗りの有無でも違えてあるので、
+   色を見分けられなくても層が違うことは分かる。 */
 .chat-message--note {
   align-self: flex-start;
   max-width: 640px;
   padding: 8px 12px;
-  border-left: 2px solid var(--color-border);
+  border-left: 2px solid var(--color-accent);
+  background-color: var(--color-bg-surface);
   color: var(--color-text-quiet);
   font-size: 13px;
   line-height: 1.5;

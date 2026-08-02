@@ -16,6 +16,10 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "resolveJsonModule": true,
+    // node --test は拡張子無しの相対 import を解決しない。ランタイム import を
+    // 持つモジュール（viewFold）をテストから読めるようにするために許す。
+    // noEmit なので出力の書き換えは起きない — 解決の話だけである。
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx"

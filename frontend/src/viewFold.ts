@@ -1,7 +1,12 @@
 import type { ChatMessage, DecidedEvent, TurnBlock } from "./types";
-import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
-import { budgetToolResult } from "./displayBudget";
-import { SubtaskFrames } from "./subtaskFrames";
+// ランタイムの import にだけ拡張子を付けてある。ライブと再生が同じ枠へ印を付ける
+// ことを主張する以上、再生側にもテストが要る（ADR-0003 Decision 1: 単一の描画源）
+// が、node --test は拡張子無しの相対 import を解決しない — このファイルが
+// テストから読めないままだと、規則の共有は「型が通っている」以上を言えない。
+import { asDecidedEvent, asNumber, asReactionEvent, asString, isViewEvent } from "./types.ts";
+import { budgetToolResult } from "./displayBudget.ts";
+import { SubtaskFrames } from "./subtaskFrames.ts";
+import { confirmedReaction, TurnIndex } from "./reaction.ts";
 
 // 連続する text ブロックはひとつに結合する（App.tsx appendTurnBlock と同じ規律 —
 // 本体は本文を細切れの text で流す）。
@@ -44,6 +49,9 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
   // ひとつの「いま開いている枠」では足りない（本体 ADR-0056 で並走が実際に
   // 起きるようになった）。当て先の規則はライブ（useChatSession）と共有する。
   const subFrames = new SubtaskFrames<number>();
+  // 反応 (本体 ADR-0057) の宛先を引く表。n はタスクごとに1から振り直されるので
+  // task.started でリセットする — 規則はライブ（useChatSession）と同じ1つを通す。
+  const turns = new TurnIndex<number>();
   let pendingDecided: DecidedEvent | undefined;
   let activeDecided: DecidedEvent | undefined;
   // n ごとに一度だけ You を差し込む: fold-back のフィードターンは親と同じ n を
@@ -53,6 +61,20 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
   /** この行がどの枠に属すか。sub を持たない行は会話そのもののターンへ。 */
   function targetIndex(sub: number | undefined): number {
     return subFrames.target(sub, openTurnIndex) ?? -1;
+  }
+
+  /** 置き換えられた枠に付いていた印を、新しい枠へ移す（from が null なら何もしない）。 */
+  function carryReactionMark(from: number | null, to: number): void {
+    if (from === null) {
+      return;
+    }
+    const old = messages[from];
+    const next = messages[to];
+    if (old.kind !== "turn" || next.kind !== "turn" || old.reaction === undefined) {
+      return;
+    }
+    next.reaction = old.reaction;
+    old.reaction = undefined;
   }
 
   function appendBlock(block: TurnBlock, sub: number | undefined) {
@@ -89,6 +111,7 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
         activeDecided =
           sid !== undefined && pendingDecided?.sid === sid ? pendingDecided : undefined;
         pendingDecided = undefined;
+        turns.reset();
         break;
       }
       case "decided": {
@@ -121,6 +144,11 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
         }
         messages.push({ id: nextId(), kind: "turn", n, provider, blocks: [], decided: activeDecided });
         openTurnIndex = messages.length - 1;
+        // 印の宛先になるのは会話そのもののターンだけ（子は経験を持たない）。
+        // 同じ n が繰り返されたら宛先は後から来た枠 —— 畳み戻しの結論が着地する
+        // 枠へ印を置く（TurnIndex.start 参照）。前の枠の印はそちらへ移す:
+        // 置き換えで消えると、ライブでは見えていた印が再生で消える。
+        carryReactionMark(turns.start(n, openTurnIndex), openTurnIndex);
         break;
       }
       case "text": {
@@ -178,6 +206,33 @@ export function foldViewEvents(rawEvents: unknown[], userTurnsByN: Record<number
         const text = asString(ev.text);
         if (text !== undefined && text !== "") {
           messages.push({ id: nextId(), kind: "note", text, await: ev.await === true });
+        }
+        break;
+      }
+      case "reaction": {
+        // 過去でも印は見える（置けはしない — GUI ADR-0014 Decision 5）。
+        // スクロールバックに残っている記帳の確認をそのまま枠へ写す。
+        const r = asReactionEvent(ev);
+        if (r === undefined) {
+          break;
+        }
+        const idx = turns.target(r.n);
+        if (idx === null) {
+          break;
+        }
+        // 締めが読むのはそのタスクの最後の1件だけ（本体 ADR-0057 Decision 2）。
+        // 印もタスクにつき1つにする —— 再生で複数の印が並ぶと、そのタスクが
+        // 何と記録されたかについて画面が嘘をつく（ライブと同じ規則: ADR-0003
+        // Decision 1）。どこで気が変わったかは台帳のイベント列が持っている。
+        for (const other of turns.others(idx)) {
+          const m = messages[other];
+          if (m.kind === "turn") {
+            m.reaction = undefined;
+          }
+        }
+        const m = messages[idx];
+        if (m.kind === "turn") {
+          m.reaction = confirmedReaction(r.word);
         }
         break;
       }

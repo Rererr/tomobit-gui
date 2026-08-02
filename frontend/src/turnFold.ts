@@ -2,11 +2,12 @@ import type { TurnBlock } from "./types";
 
 /**
  * 終わったターンで畳まれた作業の連なり。中身の TurnBlock は 1 つも捨てない —
- * 畳むのは見た目だけで、開けば元の順序のまま全部出る。
+ * 畳むのは見た目だけで、開けば元の順序のまま全部出る。ターンにつき高々1つ、
+ * 必ず末尾に現れる（GUI ADR-0014 Decision 2）。
  */
 export interface WorkBlock {
   kind: "work";
-  /** 畳まれた元のブロック（tool と tool_result の連続）。順序は保つ */
+  /** 畳まれた元のブロック（tool と tool_result）。ターン内での元の順序を保つ */
   blocks: TurnBlock[];
   /** 畳まれた中の tool 呼び出しの数。要約行の「作業 N件」に使う */
   toolCount: number;
@@ -19,13 +20,24 @@ function isWork(block: TurnBlock): boolean {
 }
 
 /**
- * ターンが終わった後だけ、作業ログ（tool / tool_result の連続）を 1 つの
- * WorkBlock へ畳む。text と error は畳まない。
+ * ターンが終わった後だけ、作業ログ（tool / tool_result）を1つの WorkBlock へ
+ * ターンの末尾に集める。text と error は畳まず、元の順序のまま上に残る
+ * （GUI ADR-0014 Decision 2）。
  *
  * なぜ「終わった後だけ」か: 走っている最中の tool 行は、いま何をしているかを
  * 語る唯一のものである（末尾の帯 (ADR-0008) が言えるのは「動いている」ことまでで、
  * 中身は言わない）。走行中に畳むと、待たされている人から進捗が消える。
  * 答えが出た瞬間に初めて、その手順は「読まなくてよいもの」に変わる。
+ *
+ * なぜ本文を挟んだ作業も1つに合流させるか: 畳む単位はかつて「連続した run」
+ * だったため、本文の間に畳まれた行が挟まっていた——答えを前に出すために畳んだ
+ * のに、畳んだものが本文を分断していた。単位を「ターン1つ」にすると、
+ * 「この本文の後にこの作業をした」という対応は既定の表示から消えるが、開けば
+ * 元の順序のまま残る。既定で読めることと、読めることは別（同 Decision 2）。
+ *
+ * なぜ1件でも畳むか: 畳んだ先は Decision 3 で provider・所要時間・コストと
+ * 合流する1本のメタ行になる。件数で経路を分けると、1件だけの作業がメタ行に
+ * 辿り着けず、常時チップを畳んだ意味が薄れる。
  *
  * なぜ error は畳まないか: 畳んだものは既定で読まれない。読まれなくてよいのは
  * 手順であって、失敗ではない。
@@ -41,32 +53,19 @@ export function foldWorkBlocks(blocks: TurnBlock[], finished: boolean): FoldedBl
   if (!finished || !blocks.some((b) => b.kind === "text")) {
     return [...blocks];
   }
-  const folded: FoldedBlock[] = [];
-  let run: TurnBlock[] = [];
-
-  function flush() {
-    if (run.length === 0) {
-      return;
-    }
-    // 1 件だけの作業をわざわざ畳むと、開く手間の方が高くつく（「作業 1件」を
-    // 開いたら 1 行だった、という体験になる）。そのまま出す。
-    if (run.length === 1) {
-      folded.push(run[0]);
-    } else {
-      folded.push({ kind: "work", blocks: run, toolCount: run.filter((b) => b.kind === "tool").length });
-    }
-    run = [];
-  }
-
+  const body: TurnBlock[] = [];
+  const work: TurnBlock[] = [];
   for (const block of blocks) {
     if (isWork(block)) {
-      run.push(block);
-      continue;
+      work.push(block);
+    } else {
+      body.push(block);
     }
-    flush();
-    folded.push(block);
   }
-  flush();
+  const folded: FoldedBlock[] = [...body];
+  if (work.length > 0) {
+    folded.push({ kind: "work", blocks: work, toolCount: work.filter((b) => b.kind === "tool").length });
+  }
   return folded;
 }
 

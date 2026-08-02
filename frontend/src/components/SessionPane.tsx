@@ -5,6 +5,7 @@ import type { ChatMessage } from "../types";
 import { foldViewEvents } from "../viewFold";
 import { Markdown } from "./Markdown";
 import { MessageView } from "./ChatMessageView";
+import { sameSpeakerAsPrevious } from "../speakerName";
 import { VerdictBar } from "./VerdictBar";
 import { errorMessage } from "../errorMessage";
 
@@ -23,7 +24,7 @@ type LoadState =
   | { kind: "loaded"; detail: main.SessionDetail; transcript: ChatMessage[] | null }
   | { kind: "error"; message: string };
 
-/** 表示用に畳んだダイジェスト行。連続するTomo本文は1つの吹き出しに、
+/** 表示用に畳んだダイジェスト行。連続するTomo本文は1つの行に、
  * 連続する同名ツールは回数に集約する — 台帳の1イベント=1行のまま出すと
  * ツール行がダイジェストを埋めてしまう。 */
 type ViewRow =
@@ -120,21 +121,25 @@ export function SessionPane({ sessionId, onLedgerChanged }: SessionPaneProps) {
     };
   }, [sessionId, reloadKey]);
 
-  function renderDigestRow(row: ViewRow, i: number) {
+  function renderDigestRow(row: ViewRow, i: number, rows: ViewRow[]) {
+    // ライブ側 (speakerName.sameSpeakerAsPrevious) と同じ器・同じ規律:
+    // 連続する同じ話者では名前行を目からは省く（ADR-0014 Decision 1）。
+    // foldItems が連続する tomo 本文を既に1行へ集約しているので、実際に
+    // 効くのはほぼ user が連続する経路だけだが、規律としては揃えておく。
+    const sameSpeaker =
+      i > 0 && (row.kind === "user" || row.kind === "tomo") && rows[i - 1].kind === row.kind;
     switch (row.kind) {
       case "user":
         return (
-          <div key={i} className="chat-message chat-message--user">
-            {/* ライブ側 (ChatMessageView) と同じ扱い: 右寄せと色で分かるので
-                目には出さず、読み上げにだけ残す */}
-            <span className="sr-only">You</span>
+          <div key={i} className="chat-message">
+            <span className={sameSpeaker ? "sr-only" : "chat-message-role"}>You</span>
             <p className="chat-message-text">{row.text}</p>
           </div>
         );
       case "tomo":
         return (
-          <div key={i} className="chat-message chat-message--tomo">
-            <span className="chat-message-role">Tomo</span>
+          <div key={i} className="chat-message">
+            <span className={sameSpeaker ? "sr-only" : "chat-message-role"}>Tomo</span>
             <Markdown text={row.text} />
           </div>
         );
@@ -191,8 +196,13 @@ export function SessionPane({ sessionId, onLedgerChanged }: SessionPaneProps) {
                 Tomoの応答はスクロールバックから、あなたの発話は台帳の記録（verbatim）から復元
               </p>
               <div className="session-digest-log">
-                {state.transcript.map((message) => (
-                  <MessageView key={message.id} message={message} />
+                {/* map の第3引数（走査中の配列そのもの）で渡す: state.transcript は
+                    null チェック済みだが、コールバック内で state.transcript を
+                    もう一度読み直すと非nullの絞り込みが効かない（TSの既知の制約 —
+                    プロパティアクセスの絞り込みはクロージャを越えて残らない）。
+                    ここなら型アサーションを足さずに済む。 */}
+                {state.transcript.map((message, i, transcript) => (
+                  <MessageView key={message.id} message={message} sameSpeaker={sameSpeakerAsPrevious(transcript, i)} />
                 ))}
               </div>
             </>

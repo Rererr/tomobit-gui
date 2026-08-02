@@ -59,7 +59,7 @@ await page.evaluate(() => {
 
 ## 実インターフェース経由の本物のターンを1回は通す
 
-上記の注入だけで済ませず、golden pathは最低1回、`.chat-input` に入力 → `.chat-send-btn` クリックで実際に送らせ、`.chat-turn-footer` の出現を待つ（実`tomobit chat`プロセスが起動し実LLMへ課金される — 使い捨てDBでの1回に留める）。
+上記の注入だけで済ませず、golden pathは最低1回、`.chat-input` に入力 → `.chat-send-btn` クリックで実際に送らせ、`.chat-turn-meta` の出現を待つ（ターン終了時のメタ行 — GUI ADR-0014 Decision 3 で旧 `.chat-turn-footer` を統合した後継。実`tomobit chat`プロセスが起動し実LLMへ課金される — 使い捨てDBでの1回に留める）。
 
 ## 既知のgotcha
 

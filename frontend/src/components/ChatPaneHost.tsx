@@ -3,6 +3,7 @@ import { ChatPane } from "./ChatPane";
 import { PermissionDialog } from "./PermissionDialog";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { RunCommandProvider } from "./RunCommandProvider";
+import { ReactionProvider } from "./ReactionProvider";
 import { RunCommand } from "../../wailsjs/go/main/App";
 import { useChatSession } from "../useChatSession";
 import { firstUserSay } from "../closingSheet";
@@ -111,48 +112,53 @@ export function ChatPaneHost({
     <RunCommandProvider
       value={{ enabled: runCommandEnabled, workingDir: pane.working_dir ?? "", run: RunCommand }}
     >
-      <section className="chat-pane-host">
-        {closable && (
-          <button
-            className="chat-pane-close"
-            onClick={() => void handleClose()}
-            title="この窓を区切って閉じる"
-            aria-label="この窓を閉じる"
-          >
-            ×
-          </button>
-        )}
-        <ChatPane
-          messages={chat.messages}
-          activity={chat.activity}
-          onSend={chat.send}
-          onNewChat={() => void chat.newChat()}
-          newChatDisabled={chat.boundaryActive || chat.closing}
-          allowEmptySend={chat.boundaryActive}
-          workspace={
-            <>
-              {/* 判断はしないが、観測は言う (ADR-0009 Decision 6)。禁止も
-                  モーダルも出さない — 食い違いを黙って作らないための1行。 */}
-              {sharesPlace && (
-                <p className="chat-pane-shared-place">
-                  この窓は、もう1つの窓と同じ場所で働いている
-                </p>
-              )}
-              <WorkspaceBar
-                workingDir={pane.working_dir ?? ""}
-                readDirs={pane.read_dirs ?? []}
-                onChange={(dir, dirs) => void handleWorkspaceChange(dir, dirs)}
-                onError={chat.appendSystem}
-              />
-            </>
-          }
-        />
-        {/* 権限の問いは窓の中に出る (本体 ADR-0053)。他の窓は動き続ける —
-            これはその窓の Tomo が仕事を進めるために要るものだから。 */}
-        {chat.permission !== null && (
-          <PermissionDialog request={chat.permission} onAnswer={chat.answerPermission} />
-        )}
-      </section>
+      {/* 反応の口はこの窓のもの (ADR-0014 Decision 4): 置ける枠も、押した時の
+          行き先も、その窓の走行中のタスクにしか無い。過去セッションの面には
+          配らないので、あちらは印を見るだけになる (Decision 5)。 */}
+      <ReactionProvider value={chat.reaction}>
+        <section className="chat-pane-host">
+          {closable && (
+            <button
+              className="chat-pane-close"
+              onClick={() => void handleClose()}
+              title="この窓を区切って閉じる"
+              aria-label="この窓を閉じる"
+            >
+              ×
+            </button>
+          )}
+          <ChatPane
+            messages={chat.messages}
+            activity={chat.activity}
+            onSend={chat.send}
+            onNewChat={() => void chat.newChat()}
+            newChatDisabled={chat.boundaryActive || chat.closing}
+            allowEmptySend={chat.boundaryActive}
+            workspace={
+              <>
+                {/* 判断はしないが、観測は言う (ADR-0009 Decision 6)。禁止も
+                    モーダルも出さない — 食い違いを黙って作らないための1行。 */}
+                {sharesPlace && (
+                  <p className="chat-pane-shared-place">
+                    この窓は、もう1つの窓と同じ場所で働いている
+                  </p>
+                )}
+                <WorkspaceBar
+                  workingDir={pane.working_dir ?? ""}
+                  readDirs={pane.read_dirs ?? []}
+                  onChange={(dir, dirs) => void handleWorkspaceChange(dir, dirs)}
+                  onError={chat.appendSystem}
+                />
+              </>
+            }
+          />
+          {/* 権限の問いは窓の中に出る (本体 ADR-0053)。他の窓は動き続ける —
+              これはその窓の Tomo が仕事を進めるために要るものだから。 */}
+          {chat.permission !== null && (
+            <PermissionDialog request={chat.permission} onAnswer={chat.answerPermission} />
+          )}
+        </section>
+      </ReactionProvider>
     </RunCommandProvider>
   );
 }

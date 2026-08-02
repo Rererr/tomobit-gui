@@ -3,6 +3,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { ChatMessage } from "../types";
 import type { Activity } from "../activity";
 import { MessageView } from "./ChatMessageView";
+import { sameSpeakerAsPrevious } from "../speakerName";
+import { isLatestTurn } from "../reaction";
 import { ActivityIndicator } from "./ActivityIndicator";
 import { NewChatConfirmDialog } from "./NewChatConfirmDialog";
 
@@ -122,6 +124,18 @@ export function ChatPane({
 
   return (
     <div className="chat-pane">
+      {/* 入力欄までの飛び石 (WCAG 2.4.1 Bypass Blocks)。反応の口 (ADR-0014
+          Decision 4) はターンごとに語彙の数だけボタンが増えるので、会話が伸びる
+          ほど入力欄に着くまでのフォーカス対象が線形に増える（実測: ターン14件で
+          48個中42個が反応ボタン）。
+          Why not 反応ボタンを tabindex="-1" にするか: あれはホバーしないと
+          見えない口で、キーボードの人にとっては**唯一の到達経路**である。
+          遠いことより、辿り着けないことの方が重い。
+          ログより前に置くのは、Tab で会話面に入った最初の一歩でなければ
+          「飛ばす」意味が無いからである。 */}
+      <button className="chat-skip-to-input" onClick={() => textareaRef.current?.focus()}>
+        入力欄へ移動
+      </button>
       {/* role=log はチャット履歴の標準ARIAパターン。aria-live="assertive" は
           常時流れるトークンストリームをそのたび読み上げて害になるので使わない。
           aria-relevant も既定の "additions text" ではなく "additions" に絞る —
@@ -136,7 +150,14 @@ export function ChatPane({
           {messages.length === 0 && activity === null ? (
             <div className="chat-empty-state">Tomoに話しかけてみよう</div>
           ) : (
-            messages.map((message) => <MessageView key={message.id} message={message} />)
+            messages.map((message, i) => (
+              <MessageView
+                key={message.id}
+                message={message}
+                sameSpeaker={sameSpeakerAsPrevious(messages, i)}
+                latestTurn={isLatestTurn(messages, i)}
+              />
+            ))
           )}
           {/* 進捗が1つも来ないあいだ、動いていることを言う唯一の場所 (ADR-0008)。
               会話の末尾に置くのは、待っている人の目が既にそこにあるから */}

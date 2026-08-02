@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AbandonBoundary, EndTask, SendLine } from "../wailsjs/go/main/App";
 import { EventsOn } from "../wailsjs/runtime/runtime";
-import type { ChatMessage, DecidedEvent, StreamChannel, TurnBlock } from "./types";
-import { asDecidedEvent, asNumber, asString, isViewEvent } from "./types";
+import type { ChatMessage, DecidedEvent, StreamChannel, TurnBlock, TurnMessage } from "./types";
+import { asDecidedEvent, asNumber, asReactionEvent, asReactionVocabulary, asString, isViewEvent } from "./types";
 import { errorMessage } from "./errorMessage";
 import { appendBlocksTo } from "./appendBlocks";
 import { SubtaskFrames } from "./subtaskFrames";
@@ -13,6 +13,8 @@ import { parsePermissionEvent } from "./permission";
 import type { PermissionRequest } from "./permission";
 import { advanceActivity, startActivity } from "./activity";
 import type { Activity, ActivityPhase } from "./activity";
+import { confirmedReaction, drainOutbox, reactionLine, ReactionOutbox, TurnIndex } from "./reaction";
+import type { MouthState, ReactionMark, ReactionPort, ReactionWord } from "./reaction";
 
 /**
  * MAIN_PANE は当面ただ一つの窓 (ADR-0009 Phase 1)。定数にしてあるのは、
@@ -59,6 +61,8 @@ export interface ChatSession {
   closingNotes: string[];
   /** Provider が権限を求めている問い (本体 ADR-0053)。null は求められていない。 */
   permission: PermissionRequest | null;
+  /** 返答の隣に置く反応の口 (ADR-0014 Decision 4)。窓の中の画面へ context で配る。 */
+  reaction: ReactionPort;
   answerPermission: (send: string) => void;
   send: (draft: string) => void;
   newChat: () => Promise<void>;
@@ -74,6 +78,10 @@ function createMessageId(): string {
   nextMessageId += 1;
   return `msg-${nextMessageId}`;
 }
+
+/** 置ける枠が1つも無い状態。毎回 new すると context の値が変わって画面が
+ *  描き直されるので、空は使い回す。 */
+const NO_PLACEABLE_TURNS: ReadonlySet<string> = new Set();
 
 /**
  * useChatSession は「1つの窓ぶんの会話」を丸ごと持つ。
@@ -126,6 +134,19 @@ export function useChatSession(
   // 消えると、モデルが「許可をいただけますか」と言ったまま答える口が無い、
   // という ADR-0053 が直そうとした状態にそのまま戻る。
   const [permission, setPermission] = useState<PermissionRequest | null>(null);
+  const permissionRef = useRef<PermissionRequest | null>(null);
+  // 反応の語彙は本体が配る (本体 ADR-0057 Decision 3)。null は配られなかった＝
+  // 口を出さない — 劣化は沈黙（decided と同じ扱い）。
+  const [reactionWords, setReactionWords] = useState<ReactionWord[] | null>(null);
+  // いま開いているタスクの「ターン番号 → 枠の id」。台帳の n はタスクごとに
+  // 1から振り直されるので、n だけを鍵にすると区切りの向こう側のターンへ印が付く。
+  const turnIndexRef = useRef(new TurnIndex<string>());
+  // 反応を置ける枠 (ADR-0014 Decision 4)。turnIndexRef の写しだが、描くために
+  // state で持つ（activity / boundary と同じ ref+state の二重持ち）。
+  const [placeableTurns, setPlaceableTurns] = useState<ReadonlySet<string>>(NO_PLACEABLE_TURNS);
+  // 口が空くまで反応を溜める場所。走行中に書いた行は、次に本体が行を読む場所
+  // （権限の問い・境界の器官）で答えとして飲まれる (ADR-0014 Decision 4)。
+  const outboxRef = useRef(new ReactionOutbox());
   // decided（本体 ADR-0040）は自分の task.started より先に届きうるので一時的に持つ。
   const pendingDecidedRef = useRef<DecidedEvent | null>(null);
   const activeDecidedRef = useRef<DecidedEvent | null>(null);
@@ -143,6 +164,13 @@ export function useChatSession(
   function setActivity(v: Activity | null) {
     activityRef.current = v;
     setActivityState(v);
+  }
+
+  // 権限の問いも ref と両持ちにする: 反応を流してよいかの判定は、送信の途中
+  // （await のあいだ）にも読み直す必要があり、そこでは state のクロージャが古い。
+  function setPermissionAsked(v: PermissionRequest | null) {
+    permissionRef.current = v;
+    setPermission(v);
   }
 
   function beginActivity(phase: ActivityPhase) {
@@ -171,6 +199,110 @@ export function useChatSession(
       }
       return [...prev, { id: createMessageId(), kind: "stderr", text }];
     });
+  }
+
+  /** 反応を送ってよいかの判定に要る、いまの窓の状態（すべて ref から読む）。 */
+  function mouthNow(): MouthState {
+    return {
+      running: activityRef.current !== null,
+      permissionAsked: permissionRef.current !== null,
+      boundaryActive: boundaryRef.current,
+      closing: closingRef.current,
+    };
+  }
+
+  /** 枠に印を書く。id が判らない（いまのタスクに無い）番号は黙って捨てる。 */
+  function markTurn(n: number, patch: ReactionMark) {
+    const id = turnIndexRef.current.target(n);
+    if (id === null) {
+      return;
+    }
+    setMessages((prev) => prev.map((m) => (m.id === id && m.kind === "turn" ? { ...m, ...patch } : m)));
+  }
+
+  /**
+   * 本体が記帳した1件を画面へ写す。**いま開いているタスクの他の枠の印は降ろす。**
+   *
+   * 締めが読むのはそのタスクの最後の `user.reaction` 1件だけ（本体 ADR-0057
+   * Decision 2）なので、3ターン目の 👍 と7ターン目の 👎 が同時に見えている画面は、
+   * 記録される内容について嘘をつく。置き直せば印はそのターンへ移る —— どこで
+   * 気が変わったかの履歴は台帳のイベント列が持っているので、失われない。
+   *
+   * Why not 押した瞬間に他の印を降ろすか: 送信が失敗した時、台帳にはまだ前の
+   * 反応が残っているのに画面からだけ消えることになる（押した通りには描かない —
+   * ADR-0010 Decision 3）。送信待ちが同時に2つ見えるのは許して、**確定した印**
+   * だけを1つに保つ。破線の待ちは「置いた」ではなく「送っている」と読める姿で、
+   * 記録された答えを名乗っていない。
+   *
+   * まだ溜め場に残っている別の枠の待ちも、ここで一度降ろす（見える印を1つに
+   * 保つため）。それは送られ、記帳が返った時にその枠へ印が立つ —— 一瞬だけ
+   * 待ちの姿が消えるが、印は必ず最後に押した枠へ着地する。
+   */
+  function applyConfirmedReaction(n: number, word: string) {
+    const id = turnIndexRef.current.target(n);
+    if (id === null) {
+      return;
+    }
+    const others = new Set(turnIndexRef.current.others(id));
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.kind !== "turn") {
+          return m;
+        }
+        if (m.id === id) {
+          return { ...m, reaction: confirmedReaction(word), reactionPending: undefined };
+        }
+        // 触らない枠は参照を保つ（MessageView の浅い比較を壊さない）。
+        if (!others.has(m.id) || (m.reaction === undefined && m.reactionPending === undefined)) {
+          return m;
+        }
+        return { ...m, reaction: undefined, reactionPending: undefined };
+      }),
+    );
+  }
+
+  /** 溜まっている反応を、口が空いているあいだだけ流す (reaction.ts drainOutbox)。 */
+  async function flushReactions() {
+    await drainOutbox(outboxRef.current, mouthNow, async (n, word) => {
+      try {
+        // 反応は依頼ではないので、待ちの帯 (ADR-0008) は立てない。sendLine を
+        // 通さないのはそのためで、会話にも積まない（押した人が待たされる理由が無い）。
+        await SendLine(paneId, reactionLine(n, word));
+        return true;
+      } catch (err) {
+        // 送れなかった印を送信待ちのまま残すと、いつまでも記帳を待つ姿になる。
+        markTurn(n, { reactionPending: undefined });
+        appendSystem(`反応の送信に失敗: ${errorMessage(err)}`);
+        return false;
+      }
+    });
+  }
+
+  /**
+   * 反応の宛先が消えた（区切り・プロセス終了）。溜めていたものはもう送れない —
+   * 本体は走行中のタスクにしか置かせない (本体 ADR-0057 Decision 1)。
+   *
+   * 黙って捨てないのは、押した人にとっては「置いた」ままだからである。
+   */
+  function dropReactions(reason: string) {
+    setPlaceableTurns(NO_PLACEABLE_TURNS);
+    // まだ送っていないぶんと、送ったが記帳が返っていないぶんの両方が返る
+    // (ReactionOutbox.drop)。後者を数えていないと、**送信は成功したが本体が
+    // 断った反応**が 1行も言われずに消える —— 溜め場からは既に抜けているので、
+    // 「捨てるものが無かった」と見えるためである。
+    const dropped = outboxRef.current.drop();
+    // 送信待ちの印は、宛先が消えた時点で全部降ろす。本体が断った反応は view に
+    // 来ないので、残すと永遠に記帳を待つ姿で固まる。
+    // 消すものが無ければ同じ配列を返す（境界のたびにログ全体を作り直さない）。
+    setMessages((prev) =>
+      prev.some((m) => m.kind === "turn" && m.reactionPending !== undefined)
+        ? prev.map((m) => (m.kind === "turn" && m.reactionPending !== undefined ? { ...m, reactionPending: undefined } : m))
+        : prev,
+    );
+    if (dropped.length === 0) {
+      return;
+    }
+    appendSystem(`置いた反応は記帳されずに終わった（${reason}）`);
   }
 
   function flushPendingBlocks() {
@@ -258,7 +390,33 @@ export function useChatSession(
         }
         openTurnIdRef.current = id;
         const decided = activeDecidedRef.current ?? undefined;
-        setMessages((prev) => [...prev, { id, kind: "turn", n, provider, blocks: [], decided }]);
+        // 反応の宛先になるのは会話そのもののターンだけ。分割の子は経験を持たない
+        // ので（本体 ADR-0054）、置いても効く先が無い (ADR-0014 Decision 4)。
+        // 同じ n が繰り返されたら宛先は後から来た枠になる（畳み戻しの結論が
+        // 着地する枠。TurnIndex.start 参照）ので、前の枠に付いていた印・送信待ちを
+        // 新しい枠へ移す —— 移さないと、置いたはずの印が黙って消える。
+        const replaced = turnIndexRef.current.start(n, id);
+        setMessages((prev) => {
+          const carried =
+            replaced === null
+              ? undefined
+              : prev.find((m): m is TurnMessage => m.id === replaced && m.kind === "turn");
+          const opened: TurnMessage = { id, kind: "turn", n, provider, blocks: [], decided };
+          if (carried === undefined) {
+            return [...prev, opened];
+          }
+          opened.reaction = carried.reaction;
+          opened.reactionPending = carried.reactionPending;
+          return [
+            ...prev.map((m) =>
+              m.id === replaced && m.kind === "turn"
+                ? { ...m, reaction: undefined, reactionPending: undefined }
+                : m,
+            ),
+            opened,
+          ];
+        });
+        setPlaceableTurns(new Set(turnIndexRef.current.refs()));
         break;
       }
       case "task.started": {
@@ -266,6 +424,27 @@ export function useChatSession(
         activeDecidedRef.current =
           sid !== undefined && pendingDecidedRef.current?.sid === sid ? pendingDecidedRef.current : null;
         pendingDecidedRef.current = null;
+        // 台帳の n はタスクごとに1から振り直される（本体 ADR-0022 Decision 1）。
+        // 表を持ち越すと、区切りの向こう側のターンへ印が付く。
+        turnIndexRef.current.reset();
+        setPlaceableTurns(NO_PLACEABLE_TURNS);
+        break;
+      }
+      case "init": {
+        // 語彙は本体が配る (本体 ADR-0057 Decision 3)。プロセスが起き直すたびに
+        // 読み直すので、本体を古いものへ戻せば口も黙って消える。
+        setReactionWords(asReactionVocabulary(ev));
+        break;
+      }
+      case "reaction": {
+        // 押した通りには描かない (ADR-0014 Decision 4 / ADR-0010 Decision 3)。
+        // 印が確定するのは、本体が記帳したこの1件を受けた時だけである。
+        const r = asReactionEvent(ev);
+        if (r !== undefined) {
+          // 記帳が返った = もう宙に浮いていない。宛先が判らない番号でも降ろす。
+          outboxRef.current.settle(r.n);
+          applyConfirmedReaction(r.n, r.word);
+        }
         break;
       }
       case "decided": {
@@ -349,7 +528,7 @@ export function useChatSession(
         // 文面から種類を当てず、type で判る形で本体が出している。
         const req = parsePermissionEvent(ev as unknown as Record<string, unknown>, parseBoundaryQuestion);
         if (req !== null) {
-          setPermission(req);
+          setPermissionAsked(req);
         }
         // 読めなかった場合もログには残る（下の note と同じ経路を通らないので、
         // ここで1行積む）— 答える道を完全に消さない。
@@ -367,6 +546,9 @@ export function useChatSession(
       case "task.cancelled": {
         setBoundary(false);
         activeDecidedRef.current = null;
+        // 区切りの向こう側になったターンには、もう口を出さない
+        // (ADR-0014 Decision 4 — あちらの受け皿は過去セッションの 👍/👎)。
+        dropReactions("タスクが区切られた");
         ledgerChangeRef.current();
         break;
       }
@@ -415,6 +597,9 @@ export function useChatSession(
       expectedExitRef.current = false;
       setBoundary(false);
       setActivity(null);
+      // プロセスが落ちた経路（task.finished を伴わない終わり方）の受け皿。
+      // 溜めたまま残すと、次の送信で起き直した別のタスクへ古い番号の反応が飛ぶ。
+      dropReactions("チャットのプロセスが終わった");
       ledgerChangeRef.current();
       // 窓を閉じる途中だったなら、締めが終わった今が畳んでよい瞬間
       // (ADR-0009 Decision 4)。
@@ -507,9 +692,45 @@ export function useChatSession(
 
   // 許可の答えは普通の1行として本体へ返る（本体が入力欄と同じ口で読んでいる）。
   function answerPermission(text: string) {
-    setPermission(null);
+    setPermissionAsked(null);
     void sendLine(text);
   }
+
+  /**
+   * 返答の隣に反応を置く (ADR-0014 Decision 4)。会話には出さず、待ちの帯も
+   * 立てない — `/react` は依頼ではないので、送信欄の履歴にも待ちにも乗らない。
+   *
+   * ここでやるのは「溜める」ところまでで、送るかどうかは口の状態が決める。
+   * 押した瞬間に空いていることもあるので、その場で1度流しにいく（口が空くのを
+   * 待つ側は effect が拾うが、押下は view イベントではないので state が動かない）。
+   */
+  function react(n: number, word: string) {
+    if (turnIndexRef.current.target(n) === null) {
+      // いまのタスクのターンではない = 宛先が無い。UI はそもそも口を出さない
+      // ので普段は起きないが、宛先の判定を持っているのはこちらである。
+      return;
+    }
+    outboxRef.current.place(n, word);
+    markTurn(n, { reactionPending: word });
+    void flushReactions();
+  }
+
+  // 押した時の呼び先は毎描画で作り直されるので、context へ配る口は固定にして
+  // 中身を ref 越しに読む（ChatPaneHost の answerPortRef と同じ作法）。ここが
+  // 毎回変わると、context を読む全ての反応行が毎描画で描き直される。
+  const reactRef = useRef(react);
+  reactRef.current = react;
+  const stableReact = useRef((n: number, word: string) => reactRef.current(n, word)).current;
+  const reaction = useMemo<ReactionPort>(
+    () => ({ vocabulary: reactionWords, placeable: placeableTurns, react: stableReact }),
+    [reactionWords, placeableTurns, stableReact],
+  );
+
+  // 口が空いた瞬間に溜めていたものを流す。空いたことは view イベント由来の
+  // state 変化で判る（待ちの帯が消えた・問いに答えた・区切りが済んだ）。
+  useEffect(() => {
+    void flushReactions();
+  }, [activity, permission, boundaryActive, closing]);
 
   // 「待たずに閉じる」(ADR-0005 Decision 3)。締めモードは降ろさない: 放棄は
   // アプリ全体の行為 (ADR-0012 Decision 3) で、押した窓の締めだけが終わった
@@ -528,6 +749,7 @@ export function useChatSession(
     closingQuestion,
     closingNotes,
     permission,
+    reaction,
     answerPermission,
     send,
     newChat,
