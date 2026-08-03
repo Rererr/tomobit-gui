@@ -14,12 +14,12 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # cross-repoリンク（本体のADRを指すURL）の参照先を見るため、隣の
       # リポジトリも並べる。checkout は workspace の外へ置けないので、
       # $ADR_LINK_SIBLINGS で探す場所をここへ向ける。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Rererr/tomobit
           path: _siblings/tomobit
@@ -36,7 +36,7 @@ jobs:
   test:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
