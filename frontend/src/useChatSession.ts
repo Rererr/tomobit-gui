@@ -13,8 +13,9 @@ import { parsePermissionEvent } from "./permission";
 import type { PermissionRequest } from "./permission";
 import { advanceActivity, startActivity } from "./activity";
 import type { Activity, ActivityPhase } from "./activity";
-import { confirmedReaction, drainOutbox, reactionLine, ReactionOutbox, TurnIndex } from "./reaction";
-import type { MouthState, ReactionMark, ReactionPort, ReactionWord } from "./reaction";
+import { drainOutbox, reactionLine, ReactionOutbox, TurnIndex } from "./reaction";
+import type { MouthState, ReactionPort, ReactionWord } from "./reaction";
+import { applyConfirmedReaction, clearPendingMarks, markTurn, openTurn } from "./reactionMarks";
 
 /**
  * MAIN_PANE は当面ただ一つの窓 (ADR-0009 Phase 1)。定数にしてあるのは、
@@ -211,56 +212,6 @@ export function useChatSession(
     };
   }
 
-  /** 枠に印を書く。id が判らない（いまのタスクに無い）番号は黙って捨てる。 */
-  function markTurn(n: number, patch: ReactionMark) {
-    const id = turnIndexRef.current.target(n);
-    if (id === null) {
-      return;
-    }
-    setMessages((prev) => prev.map((m) => (m.id === id && m.kind === "turn" ? { ...m, ...patch } : m)));
-  }
-
-  /**
-   * 本体が記帳した1件を画面へ写す。**いま開いているタスクの他の枠の印は降ろす。**
-   *
-   * 締めが読むのはそのタスクの最後の `user.reaction` 1件だけ（本体 ADR-0057
-   * Decision 2）なので、3ターン目の 👍 と7ターン目の 👎 が同時に見えている画面は、
-   * 記録される内容について嘘をつく。置き直せば印はそのターンへ移る —— どこで
-   * 気が変わったかの履歴は台帳のイベント列が持っているので、失われない。
-   *
-   * Why not 押した瞬間に他の印を降ろすか: 送信が失敗した時、台帳にはまだ前の
-   * 反応が残っているのに画面からだけ消えることになる（押した通りには描かない —
-   * ADR-0010 Decision 3）。送信待ちが同時に2つ見えるのは許して、**確定した印**
-   * だけを1つに保つ。破線の待ちは「置いた」ではなく「送っている」と読める姿で、
-   * 記録された答えを名乗っていない。
-   *
-   * まだ溜め場に残っている別の枠の待ちも、ここで一度降ろす（見える印を1つに
-   * 保つため）。それは送られ、記帳が返った時にその枠へ印が立つ —— 一瞬だけ
-   * 待ちの姿が消えるが、印は必ず最後に押した枠へ着地する。
-   */
-  function applyConfirmedReaction(n: number, word: string) {
-    const id = turnIndexRef.current.target(n);
-    if (id === null) {
-      return;
-    }
-    const others = new Set(turnIndexRef.current.others(id));
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.kind !== "turn") {
-          return m;
-        }
-        if (m.id === id) {
-          return { ...m, reaction: confirmedReaction(word), reactionPending: undefined };
-        }
-        // 触らない枠は参照を保つ（MessageView の浅い比較を壊さない）。
-        if (!others.has(m.id) || (m.reaction === undefined && m.reactionPending === undefined)) {
-          return m;
-        }
-        return { ...m, reaction: undefined, reactionPending: undefined };
-      }),
-    );
-  }
-
   /** 溜まっている反応を、口が空いているあいだだけ流す (reaction.ts drainOutbox)。 */
   async function flushReactions() {
     await drainOutbox(outboxRef.current, mouthNow, async (n, word) => {
@@ -271,7 +222,7 @@ export function useChatSession(
         return true;
       } catch (err) {
         // 送れなかった印を送信待ちのまま残すと、いつまでも記帳を待つ姿になる。
-        markTurn(n, { reactionPending: undefined });
+        setMessages((prev) => markTurn(prev, turnIndexRef.current, n, { reactionPending: undefined }));
         appendSystem(`反応の送信に失敗: ${errorMessage(err)}`);
         return false;
       }
@@ -291,14 +242,8 @@ export function useChatSession(
     // 断った反応**が 1行も言われずに消える —— 溜め場からは既に抜けているので、
     // 「捨てるものが無かった」と見えるためである。
     const dropped = outboxRef.current.drop();
-    // 送信待ちの印は、宛先が消えた時点で全部降ろす。本体が断った反応は view に
-    // 来ないので、残すと永遠に記帳を待つ姿で固まる。
-    // 消すものが無ければ同じ配列を返す（境界のたびにログ全体を作り直さない）。
-    setMessages((prev) =>
-      prev.some((m) => m.kind === "turn" && m.reactionPending !== undefined)
-        ? prev.map((m) => (m.kind === "turn" && m.reactionPending !== undefined ? { ...m, reactionPending: undefined } : m))
-        : prev,
-    );
+    // 送信待ちの印は、宛先が消えた時点で全部降ろす（reactionMarks.clearPendingMarks）。
+    setMessages(clearPendingMarks);
     if (dropped.length === 0) {
       return;
     }
@@ -392,30 +337,10 @@ export function useChatSession(
         const decided = activeDecidedRef.current ?? undefined;
         // 反応の宛先になるのは会話そのもののターンだけ。分割の子は経験を持たない
         // ので（本体 ADR-0054）、置いても効く先が無い (ADR-0014 Decision 4)。
-        // 同じ n が繰り返されたら宛先は後から来た枠になる（畳み戻しの結論が
-        // 着地する枠。TurnIndex.start 参照）ので、前の枠に付いていた印・送信待ちを
-        // 新しい枠へ移す —— 移さないと、置いたはずの印が黙って消える。
+        // 印の引き継ぎは reactionMarks.openTurn が持つ。
         const replaced = turnIndexRef.current.start(n, id);
-        setMessages((prev) => {
-          const carried =
-            replaced === null
-              ? undefined
-              : prev.find((m): m is TurnMessage => m.id === replaced && m.kind === "turn");
-          const opened: TurnMessage = { id, kind: "turn", n, provider, blocks: [], decided };
-          if (carried === undefined) {
-            return [...prev, opened];
-          }
-          opened.reaction = carried.reaction;
-          opened.reactionPending = carried.reactionPending;
-          return [
-            ...prev.map((m) =>
-              m.id === replaced && m.kind === "turn"
-                ? { ...m, reaction: undefined, reactionPending: undefined }
-                : m,
-            ),
-            opened,
-          ];
-        });
+        const opened: TurnMessage = { id, kind: "turn", n, provider, blocks: [], decided };
+        setMessages((prev) => openTurn(prev, opened, replaced));
         setPlaceableTurns(new Set(turnIndexRef.current.refs()));
         break;
       }
@@ -443,7 +368,7 @@ export function useChatSession(
         if (r !== undefined) {
           // 記帳が返った = もう宙に浮いていない。宛先が判らない番号でも降ろす。
           outboxRef.current.settle(r.n);
-          applyConfirmedReaction(r.n, r.word);
+          setMessages((prev) => applyConfirmedReaction(prev, turnIndexRef.current, r.n, r.word));
         }
         break;
       }
@@ -711,7 +636,7 @@ export function useChatSession(
       return;
     }
     outboxRef.current.place(n, word);
-    markTurn(n, { reactionPending: word });
+    setMessages((prev) => markTurn(prev, turnIndexRef.current, n, { reactionPending: word }));
     void flushReactions();
   }
 
