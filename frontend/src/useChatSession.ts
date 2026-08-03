@@ -234,6 +234,15 @@ export function useChatSession(
    * 本体は走行中のタスクにしか置かせない (本体 ADR-0057 Decision 1)。
    *
    * 黙って捨てないのは、押した人にとっては「置いた」ままだからである。
+   *
+   * Why not ここで turnIndexRef も捨てるか: 表は次の task.started で捨てられる
+   * ので、残るのは「区切りと次のタスクの間」だけである。その間に届きうる唯一の
+   * ものは**区切る前に受け付けられた反応の記帳**で、それはそのタスクの枠へ着地
+   * するのが正しい（本体は先に sid を空にしてから task.finished を流すので、
+   * 区切りの後に読まれた `/react` には記帳を返さない —— 実測: 起動直後の chat は
+   * note で断るだけで `reaction` を流さない）。ここで捨てると、その1件だけが
+   * 画面から落ち、台帳と食い違う。置ける枠 (placeableTurns) は落とすので、
+   * 口はどのみち出ない。
    */
   function dropReactions(reason: string) {
     setPlaceableTurns(NO_PLACEABLE_TURNS);

@@ -45,17 +45,49 @@ await page.goto("http://localhost:34115", { waitUntil: "networkidle" });
 
 ## 実バックエンドを起動せずにチャット描画だけ検証する
 
-`window.runtime.EventsEmit` はローカルの購読者へ直接ループバックする（Wails runtimeへの実際の往復も、`tomobit chat`子プロセスの起動も不要）。ChatPaneの構造化view描画をコストゼロ・実LLM課金ゼロで検証できる:
+`window.runtime.EventsEmit` はローカルの購読者へ直接ループバックする（Wails runtimeへの実際の往復も、`tomobit chat`子プロセスの起動も不要）。ChatPaneの構造化view描画をコストゼロ・実LLM課金ゼロで検証できる。
+
+**view イベントは宛先の封筒に入れる**（ADR-0009: Go 側は全イベントに `pane` を載せ、フロントはそれで絞る）。裸の `{type:…}` を投げても購読者は自分宛でないものとして落とすので、何も起きない。既定の1窓の id は `main`:
 
 ```js
 await page.evaluate(() => {
-  window.runtime.EventsEmit("chat:view", { type: "turn.started", n: 1, provider: "claude-code" });
-  window.runtime.EventsEmit("chat:view", { type: "text", text: "**太字**\n\n- 項目" });
-  window.runtime.EventsEmit("chat:view", { type: "turn.finished", duration_ms: 500, cost_usd: 0.01 });
+  const view = (event) => window.runtime.EventsEmit("chat:view", { pane: "main", event });
+  view({ type: "turn.started", n: 1, provider: "claude-code" });
+  view({ type: "text", text: "**太字**\n\n- 項目" });
+  view({ type: "turn.finished", duration_ms: 500, cost_usd: 0.01 });
 });
 ```
 
 同様に `window.go.main.App.<MethodName>` を差し替えると `GetSessions`/`GetMemoryView`/`SendLine` 等のGo bindingもモックできる（`SendLine`をモックすればクリック操作のフォーカス挙動等を実課金無しで検証可）。
+
+### 反応の往復（ADR-0014 Decision 4）は状態遷移を跨いで確かめる
+
+反応は**送ってよい瞬間が状態で変わる**（走行中・権限の問い・境界の最中は溜める）。
+描画だけを見て済ませると、送受信そのものが一度も駆動されない。`SendLine` をモックして
+送った行を捕まえ、記帳は `reaction` イベントの注入で返す:
+
+```js
+await page.evaluate(() => { window.__sent = []; window.go.main.App.SendLine = (_p, line) => { window.__sent.push(line); return Promise.resolve(); }; });
+```
+
+1. **口が出る**: `init`（`reactions: [{word:"up",label:"文句なし"},…]` 付き）→ `task.started`
+   → `turn.started {n:1}` → `text` → `turn.finished` → `ready` を注入。
+   `.chat-turn-reactions--latest .chat-reaction-btn` が語彙の数だけ出る
+   （`ready` を忘れると走行中扱いのままで、以降の送信が全部溜まる — ADR-0008 の待ちの帯）
+2. **押す → 送信待ち**: 👍 をクリック。`.chat-reaction-btn--waiting` が立ち、
+   `window.__sent` の末尾が `/react 1 up`。**この時点では確定していない**（押した通りには描かない）
+3. **記帳 → 確定**: `{type:"reaction",n:1,word:"up"}` を注入。`--waiting` が消え
+   `--active` が残る
+4. **印はタスクにつき1つ**: `turn.started {n:2}` → `turn.finished` → `ready` を注入し、
+   2つ目のターンで 👎 → `{type:"reaction",n:2,word:"down"}`。
+   **ログ全体で `.chat-reaction-btn--active` と `.chat-reaction-placed` の合計が1個**
+   （3ターン目の👍と7ターン目の👎が同時に見える画面は、記録される内容について嘘をつく）
+5. **口が塞がっている間は溜まる**: `turn.started {n:3}`（`ready` は出さない＝走行中）の状態で
+   1つ目のターンの 👍 を押す。`window.__sent` は**増えない**まま `--waiting` が立ち、
+   `ready` を注入した瞬間に `/react 1 …` が飛ぶ
+   （走行中に書いた行は、次に本体が行を読む場所＝権限の問い・境界の器官で答えとして飲まれる）
+6. **境界で降りる**: `task.finished` を注入。`.chat-reaction-btn` が消え、送信待ちの印が降り、
+   `置いた反応は記帳されずに終わった` の system 行が出る
 
 ## 実インターフェース経由の本物のターンを1回は通す
 
