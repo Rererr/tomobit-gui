@@ -225,11 +225,9 @@ function TurnMeta({
  */
 function ReactionRow({ message, latestTurn }: { message: TurnMessage; latestTurn: boolean }) {
   const { vocabulary, placeable, react } = useReactionPort();
-  const canPlace =
-    vocabulary !== null &&
-    message.sub === undefined &&
-    message.finished !== undefined &&
-    placeable.has(message.id);
+  // 走行中のターンかどうかはここでは見ない —— 呼ぶのは終わったターンだけ
+  // （TurnCard 参照）。二重に持つと、規則がどちらにあるのか読めなくなる。
+  const canPlace = vocabulary !== null && message.sub === undefined && placeable.has(message.id);
   // 会話の最後のターンだけは、ホバー無しでも口を見せる（ADR-0014 Decision 4）。
   // 「最後」の判定は isLatestTurn（reaction.ts）に集約してあり、ここは
   // その結果を1クラスへ落とすだけ——DOM の :last-child は note 等が挟まると
