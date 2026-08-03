@@ -103,6 +103,73 @@ func TestSendLine_作業ディレクトリが消えていれば起動せず名�
 	}
 }
 
+// 死んだ chat への書き込みは、起き直した先へ1度だけ運び直される（writeLine の
+// "one crashed session costs a retry"）。人の言葉はまだどのセッションにも
+// 属していないので、起き直した先で最初の1言になる。
+//
+// 起き直しは必ず失敗させて（作業ディレクトリを消しておく）、子プロセスを
+// 立てずに「運び直そうとしたか」だけを見る。
+func TestWriteLine_人の言葉は死んだ後も起き直した先へ運ぶ(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	app.guiConfig = GUIConfig{WorkingDir: filepath.Join(t.TempDir(), "gone")}
+	proc := deadProc(t)
+	app.procs[mainPane] = proc
+
+	err := app.writeLine(mainPane, proc, "こんにちは\n")
+	if err == nil || !strings.Contains(err.Error(), "再起動") {
+		t.Fatalf("死んだ chat への人の言葉が起き直しを試みない: %v", err)
+	}
+}
+
+// ADR-0014 Decision 4 の /react は SendLine と同じ口を通るが、**走っていた
+// セッションのターン番号を名指す行**である。起き直した先へ運んでも本体は sid を
+// 持たないので断り、記帳は返らない（実測: 起動直後の chat に /react 3 up を渡すと
+// {"type":"note","text":"走っているタスクが無い — …"} だけが返り、
+// {"type":"reaction",…} は返らない）。運ぶと、断りの1行が新しい会話の頭に並び、
+// 押した印は記帳を待つ姿のまま残る。その場で失敗を返せば、印はすぐ降りる。
+func TestWriteLine_走っていたチャットへの指示は起き直した先へ運ばない(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	app.guiConfig = GUIConfig{WorkingDir: filepath.Join(t.TempDir(), "gone")}
+	proc := deadProc(t)
+	app.procs[mainPane] = proc
+
+	err := app.writeLine(mainPane, proc, "/react 3 up\n")
+	if err == nil {
+		t.Fatal("死んだ chat への反応が成功を名乗った")
+	}
+	if strings.Contains(err.Error(), "再起動") {
+		t.Errorf("反応の行を起き直した先へ運んだ: %v", err)
+	}
+	// 死んだプロセスは在庫から外れる — 次の送信（人の言葉）が起き直せる。
+	app.mu.Lock()
+	left := app.procs[mainPane]
+	app.mu.Unlock()
+	if left != nil {
+		t.Error("死んだプロセスが在庫に残り、次の送信が起き直せない")
+	}
+}
+
+// 生きている chat へは、反応の行が1行そのまま届く（encodeTurn は素通しする）。
+func TestSendLine_反応の行はそのまま1行で届く(t *testing.T) {
+	app := NewApp()
+	app.emit = func(string, ...interface{}) {}
+	proc, r := pipedProc(t)
+	app.procs[mainPane] = proc
+
+	if err := app.SendLine(mainPane, "/react 3 up"); err != nil {
+		t.Fatal(err)
+	}
+	line, err := r.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line != "/react 3 up\n" {
+		t.Errorf("届いた行 = %q, want %q", line, "/react 3 up\n")
+	}
+}
+
 func TestSendLine_シャットダウン中は新しいプロセスを起動しない(t *testing.T) {
 	app := NewApp()
 	app.emit = func(string, ...interface{}) {}

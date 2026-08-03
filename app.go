@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -369,7 +370,9 @@ func (a *App) emitEvent(name string, data ...interface{}) {
 // 尾部は本体の実装で走る), or an empty line — the boundary's Feedback question
 // is answered with a bare Enter, and outside it the chat skips empty lines, so
 // an accidental one costs nothing. エンコード結果は複数行になりうるが1回の Write
-// で書く（既存の EPIPE 再起動リトライがそのまま効く）。
+// で書く（既存の EPIPE 再起動リトライがそのまま効く）。走っていたチャットへの
+// 指示（`/` で始まる行 — ADR-0014 Decision 4 の `/react` を含む）だけは
+// 起き直した先へ運ばない: survivesRestart 参照。
 func (a *App) SendLine(pane, text string) error {
 	line := encodeTurn(text)
 	p, err := a.sendProc(pane)
@@ -386,12 +389,18 @@ func (a *App) SendLine(pane, text string) error {
 // not reading stdin: a full pipe buffer blocks the write, and a.mu must stay
 // free during that block so shutdown (and any other SendLine/EndTask call)
 // never queues behind it.
+//
+// 運び直すのは人の言葉だけ (survivesRestart)。プロセスは死んだままにせず、
+// どちらの経路でも在庫から外す — 次の送信が起き直せる状態は変わらない。
 func (a *App) writeLine(pane string, p *chatProc, line string) error {
 	err := p.write(line)
 	if err == nil {
 		return nil
 	}
 	a.invalidateProc(pane, p)
+	if !survivesRestart(line) {
+		return fmt.Errorf("chat への書き込みに失敗: %w", err)
+	}
 	p2, err2 := a.sendProc(pane)
 	if err2 != nil {
 		return fmt.Errorf("chat の再起動に失敗: %w (書き込み失敗: %v)", err2, err)
@@ -400,6 +409,27 @@ func (a *App) writeLine(pane string, p *chatProc, line string) error {
 		return fmt.Errorf("chat への書き込みに失敗: %w", err2)
 	}
 	return nil
+}
+
+// survivesRestart reports whether line still says the same thing to a chat
+// that just started.
+//
+// 人の言葉はまだどのセッションにも属していないので、送り先が起き直っても
+// 言いたいことは変わらない —— それが writeLine のリトライの意味である。
+// `/` で始まる行は違う: 本体は先頭の `/` だけを見てコマンドとして読む
+// (本体 cmd/tomobit/chat.go の command)、つまり**走っていたチャットへの指示**で
+// あって、人が言いたかったことではない。ADR-0014 Decision 4 の `/react <turn>` は
+// その最たるもので、名指しているターン番号は死んだセッションの中にしかない ——
+// 起き直した先の本体は sid を持たないので断り、記帳を返さない
+// (本体 cmd/tomobit/reaction.go)。運ぶと、断りの note が新しい会話の頭に並び、
+// 画面の印は返らない記帳を待ち続ける。
+//
+// Why not `/react` だけを名指すか: GUI が本体のコマンド語彙を1つずつ抱えることに
+// なる。本体が「先頭 `/` はコマンド」で切っているのと同じ線で切れば、語彙が
+// 増えても GUI は変わらない。GUI 自身が組む他の機械行（/exit・/cd・/add-dir）は
+// 初めからこの経路を通っていない（p.write の直呼び）ので、線はそちらとも揃う。
+func survivesRestart(line string) bool {
+	return !strings.HasPrefix(line, "/")
 }
 
 // sendProc returns the current chat process, spawning one under a.mu if none
