@@ -155,6 +155,37 @@ test("分割の子の枠には印が付かない", () => {
   assert.equal(child.reaction, undefined, "子の番号を宛先にしてはいけない");
 });
 
+// 並走する子は相手が違いうる（本体 ADR-0060: 分割提案が実行者を宣言できる）。
+// それ以前は1つの分割の子は全員同じ相手だったので、枠が相手を取り違えても
+// 症状が出なかった — 出るようになったのは、宣言で子ごとに変わってからである。
+// 本文の行は交互に届くので、text の宛先と provider の宛先が同じ規則
+// （SubtaskFrames）に乗っていることも併せて見る。
+test("並走する子の枠は、それぞれの相手を持つ", () => {
+  const messages = foldViewEvents([
+    { type: "task.started", sid: "s1" },
+    { type: "turn.started", n: 1, provider: "claude-code", sub: 1, sub_total: 2 },
+    { type: "turn.started", n: 1, provider: "codex", sub: 2, sub_total: 2 },
+    { type: "text", text: "子2の本文", sub: 2 },
+    { type: "text", text: "子1の本文", sub: 1 },
+    { type: "turn.finished", n: 1, duration_ms: 100, sub: 2 },
+    { type: "turn.finished", n: 1, duration_ms: 120, sub: 1 },
+  ]);
+  const [first, second] = turns(messages);
+  assert.equal(first.sub, 1);
+  assert.equal(second.sub, 2);
+  assert.equal(first.provider, "claude-code", "継いだ子は親の相手のまま");
+  assert.equal(second.provider, "codex", "指名された子は宣言された相手を名乗る");
+  assert.deepEqual(
+    first.blocks.map((b) => (b.kind === "text" ? b.text : b.kind)),
+    ["子1の本文"],
+    "本文が隣の枠へ流れ込まない",
+  );
+  assert.deepEqual(
+    second.blocks.map((b) => (b.kind === "text" ? b.text : b.kind)),
+    ["子2の本文"],
+  );
+});
+
 test("読めない reaction は印を付けない", () => {
   const messages = foldViewEvents([
     { type: "task.started", sid: "s1" },
